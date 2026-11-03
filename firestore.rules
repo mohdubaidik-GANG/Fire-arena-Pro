@@ -93,6 +93,12 @@ service cloud.firestore {
       }
     }
 
+    // Matches Collection
+    match /matches/{matchId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
     // Deposit Requests
     match /depositRequests/{depositId} {
       allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());

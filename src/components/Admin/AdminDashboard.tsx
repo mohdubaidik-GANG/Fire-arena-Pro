@@ -47,7 +47,8 @@ import {
   UserProfile,
   AdminSettings,
   TournamentCategory,
-  TournamentMode
+  TournamentMode,
+  TournamentStatus
 } from '../../types';
 
 interface AdminDashboardProps {
@@ -524,9 +525,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         <div className="flex items-center gap-1.5">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
-                              t.status === 'live'
+                              t.status?.toLowerCase() === 'live'
                                 ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                : t.status === 'completed'
+                                : t.status?.toLowerCase() === 'completed'
                                 ? 'bg-slate-800 text-slate-400'
                                 : 'bg-emerald-500/20 text-emerald-400'
                             }`}
@@ -545,7 +546,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
                       <h3 className="text-base font-bold text-white font-heading">{t.title}</h3>
                       <p className="text-xs text-slate-400 mt-1">
-                        Map: <strong className="text-slate-300">{t.map}</strong> · Slots: <strong className="text-amber-400 font-mono">{t.registeredCount}/{t.maxSlots}</strong>
+                        Map: <strong className="text-slate-300">{t.map || (t as any).mapName}</strong> · Slots: <strong className="text-amber-400 font-mono">{t.registeredCount || 0}/{t.maxSlots}</strong>
                       </p>
 
                       <div className="grid grid-cols-3 gap-2 mt-3 p-2.5 rounded-xl bg-slate-900 text-center text-xs">
@@ -555,11 +556,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         </div>
                         <div>
                           <span className="text-[9px] text-slate-500 uppercase block">Pool</span>
-                          <span className="font-mono font-bold text-emerald-400">₹{t.totalPrizePool}</span>
+                          <span className="font-mono font-bold text-emerald-400">₹{t.totalPrizePool || (t as any).totalPool || 0}</span>
                         </div>
                         <div>
                           <span className="text-[9px] text-slate-500 uppercase block">Kill</span>
-                          <span className="font-mono font-bold text-amber-400">₹{t.perKillReward}</span>
+                          <span className="font-mono font-bold text-amber-400">₹{t.perKillReward || (t as any).perKill || 0}</span>
                         </div>
                       </div>
 
@@ -590,7 +591,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                           <span>Room ID & Pass</span>
                         </button>
 
-                        {t.status !== 'completed' ? (
+                        {t.status?.toLowerCase() !== 'completed' ? (
                           <button
                             onClick={() => setDeclaringResultsTour(t)}
                             className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
@@ -1095,55 +1096,122 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
 /* ---------------- CREATE TOURNAMENT MODAL ---------------- */
 const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
-  const [title, setTitle] = useState('Free Fire MAX Bermuda Clash');
+  const [matchTitle, setMatchTitle] = useState('');
   const [category, setCategory] = useState<TournamentCategory>('battle_royale');
   const [mode, setMode] = useState<TournamentMode>('Solo');
-  const [map, setMap] = useState('Bermuda');
-  const [entryFee, setEntryFee] = useState<number>(30);
-  const [perKillReward, setPerKillReward] = useState<number>(15);
-  const [totalPrizePool, setTotalPrizePool] = useState<number>(1200);
-  const [rank1Prize, setRank1Prize] = useState<number>(400);
-  const [rank2Prize, setRank2Prize] = useState<number>(200);
-  const [rank3Prize, setRank3Prize] = useState<number>(100);
-  const [maxSlots, setMaxSlots] = useState<number>(48);
+  const [mapName, setMapName] = useState('Bermuda');
+
+  // React states initialized to empty string '' instead of default 0
+  const [entryFee, setEntryFee] = useState('');
+  const [perKill, setPerKill] = useState('');
+  const [totalPool, setTotalPool] = useState('');
+  const [rank1, setRank1] = useState('');
+  const [rank2, setRank2] = useState('');
+  const [maxSlots, setMaxSlots] = useState('48');
   const [startTime, setStartTime] = useState<string>(() => {
     const d = new Date();
     d.setHours(d.getHours() + 2);
     return d.toISOString().slice(0, 16);
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   if (!isOpen) return null;
 
+  const resetForm = () => {
+    setMatchTitle('');
+    setCategory('battle_royale');
+    setMode('Solo');
+    setMapName('Bermuda');
+    setEntryFee('');
+    setPerKill('');
+    setTotalPool('');
+    setRank1('');
+    setRank2('');
+    setMaxSlots('48');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
     try {
-      const newTour: Omit<Tournament, 'id'> = {
-        title,
+      setCreating(true);
+
+      const titleClean = (matchTitle.trim() || 'Free Fire MAX Clash');
+      const numEntryFee = Number(entryFee || 0);
+      const numPerKill = Number(perKill || 0);
+      const numTotalPool = Number(totalPool || 0);
+      const numRank1 = Number(rank1 || 0);
+      const numRank2 = Number(rank2 || 0);
+      const numMaxSlots = Number(maxSlots || 2);
+      const startIso = startTime ? new Date(startTime).toISOString() : new Date().toISOString();
+      const nowIso = new Date().toISOString();
+
+      // Ensure payload uses Number(field || 0) for database
+      const payload = {
+        title: titleClean,
         category,
         mode,
-        map,
-        entryFee,
-        perKillReward,
-        totalPrizePool,
-        rank1Prize,
-        rank2Prize,
-        rank3Prize,
-        maxSlots,
+        mapName,
+        map: mapName,
+        entryFee: numEntryFee,
+        perKill: numPerKill,
+        perKillReward: numPerKill,
+        totalPool: numTotalPool,
+        totalPrizePool: numTotalPool,
+        rank1: numRank1,
+        rank1Prize: numRank1,
+        rank2: numRank2,
+        rank2Prize: numRank2,
+        rank3Prize: 0,
+        maxSlots: numMaxSlots,
         registeredCount: 0,
-        startTime: new Date(startTime).toISOString(),
-        status: 'upcoming',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        startTime: startIso,
+        joinedPlayers: [],
+        status: 'UPCOMING',
+        roomId: '',
+        roomPassword: '',
+        createdAt: nowIso,
+        updatedAt: nowIso,
       };
 
-      await addDoc(collection(db, 'tournaments'), newTour);
+      // Add document to tournaments collection (main active collection)
+      await addDoc(collection(db, 'tournaments'), {
+        ...payload,
+        status: 'upcoming' as TournamentStatus,
+      });
+
+      // Also ensure document is in matches collection
+      try {
+        await addDoc(collection(db, 'matches'), {
+          title: titleClean,
+          category,
+          mode,
+          mapName,
+          entryFee: numEntryFee,
+          perKill: numPerKill,
+          totalPool: numTotalPool,
+          rank1: numRank1,
+          rank2: numRank2,
+          maxSlots: numMaxSlots,
+          startTime: startIso,
+          joinedPlayers: [],
+          status: 'UPCOMING',
+          roomId: '',
+          roomPassword: '',
+          createdAt: nowIso,
+        });
+      } catch (errMatches) {
+        console.warn('Matches collection sync note:', errMatches);
+      }
+
+      alert('Tournament Created Successfully!');
+      resetForm();
       onClose();
     } catch (err: unknown) {
-      alert(`Error creating tournament: ${err instanceof Error ? err.message : String(err)}`);
+      console.error('Tournament Creation Error:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert('Failed to create tournament: ' + msg);
     } finally {
-      setIsSubmitting(false);
+      setCreating(false);
     }
   };
 
@@ -1156,10 +1224,11 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
             <label className="block font-semibold text-slate-300 mb-1">Match Title</label>
             <input
               type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              value={matchTitle}
+              onChange={(e) => setMatchTitle(e.target.value)}
+              placeholder="e.g. Bermuda Mega Battle Royale"
               required
-              className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white"
+              className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500"
             />
           </div>
 
@@ -1171,9 +1240,9 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
                 onChange={(e) => {
                   const cat = e.target.value as TournamentCategory;
                   setCategory(cat);
-                  if (cat === 'clash_squad_1v1') setMaxSlots(2);
-                  else if (cat === 'clash_squad_4v4') setMaxSlots(8);
-                  else setMaxSlots(48);
+                  if (cat === 'clash_squad_1v1') setMaxSlots('2');
+                  else if (cat === 'clash_squad_4v4') setMaxSlots('8');
+                  else setMaxSlots('48');
                 }}
                 className="w-full h-10 px-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
               >
@@ -1199,8 +1268,8 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
             <div>
               <label className="block font-semibold text-slate-300 mb-1">Map</label>
               <select
-                value={map}
-                onChange={(e) => setMap(e.target.value)}
+                value={mapName}
+                onChange={(e) => setMapName(e.target.value)}
                 className="w-full h-10 px-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
               >
                 <option value="Bermuda">Bermuda</option>
@@ -1218,8 +1287,9 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
               <input
                 type="number"
                 value={entryFee}
-                onChange={(e) => setEntryFee(parseInt(e.target.value) || 0)}
-                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
+                onChange={(e) => setEntryFee(e.target.value)}
+                placeholder="0"
+                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono placeholder-slate-500"
               />
             </div>
 
@@ -1227,9 +1297,10 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
               <label className="block font-semibold text-slate-300 mb-1">Per Kill (₹)</label>
               <input
                 type="number"
-                value={perKillReward}
-                onChange={(e) => setPerKillReward(parseInt(e.target.value) || 0)}
-                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
+                value={perKill}
+                onChange={(e) => setPerKill(e.target.value)}
+                placeholder="0"
+                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono placeholder-slate-500"
               />
             </div>
 
@@ -1237,9 +1308,10 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
               <label className="block font-semibold text-slate-300 mb-1">Total Pool (₹)</label>
               <input
                 type="number"
-                value={totalPrizePool}
-                onChange={(e) => setTotalPrizePool(parseInt(e.target.value) || 0)}
-                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-emerald-400 font-bold"
+                value={totalPool}
+                onChange={(e) => setTotalPool(e.target.value)}
+                placeholder="0"
+                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-emerald-400 font-bold placeholder-slate-500"
               />
             </div>
           </div>
@@ -1249,18 +1321,20 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
               <label className="block font-semibold text-slate-300 mb-1">1st Rank (₹)</label>
               <input
                 type="number"
-                value={rank1Prize}
-                onChange={(e) => setRank1Prize(parseInt(e.target.value) || 0)}
-                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
+                value={rank1}
+                onChange={(e) => setRank1(e.target.value)}
+                placeholder="0"
+                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono placeholder-slate-500"
               />
             </div>
             <div>
               <label className="block font-semibold text-slate-300 mb-1">2nd Rank (₹)</label>
               <input
                 type="number"
-                value={rank2Prize}
-                onChange={(e) => setRank2Prize(parseInt(e.target.value) || 0)}
-                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
+                value={rank2}
+                onChange={(e) => setRank2(e.target.value)}
+                placeholder="0"
+                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono placeholder-slate-500"
               />
             </div>
             <div>
@@ -1268,8 +1342,9 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
               <input
                 type="number"
                 value={maxSlots}
-                onChange={(e) => setMaxSlots(parseInt(e.target.value) || 12)}
-                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
+                onChange={(e) => setMaxSlots(e.target.value)}
+                placeholder="48"
+                className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono placeholder-slate-500"
               />
             </div>
           </div>
@@ -1289,16 +1364,17 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300"
+              disabled={creating}
+              className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="px-5 py-2 rounded-xl bg-amber-500 font-bold text-black"
+              disabled={creating}
+              className="px-5 py-2 rounded-xl bg-amber-500 font-bold text-black hover:bg-amber-400 disabled:opacity-50 transition-colors cursor-pointer"
             >
-              {isSubmitting ? 'Creating...' : 'Launch Tournament'}
+              {creating ? 'Creating...' : 'Launch Tournament'}
             </button>
           </div>
         </form>

@@ -58,7 +58,7 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
         }
 
         const tourData = tourSnap.data() as Tournament;
-        if (tourData.status !== 'upcoming') {
+        if (tourData.status?.toLowerCase() !== 'upcoming') {
           throw new Error('This tournament is no longer accepting new registrations.');
         }
 

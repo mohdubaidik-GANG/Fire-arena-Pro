@@ -35,8 +35,8 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
 
   const isJoined = Boolean(userRegistration);
   const isFull = tournament.registeredCount >= tournament.maxSlots;
-  const isLive = tournament.status === 'live';
-  const isCompleted = tournament.status === 'completed';
+  const isLive = tournament.status?.toLowerCase() === 'live';
+  const isCompleted = tournament.status?.toLowerCase() === 'completed';
 
   const hasRoomCredentials = Boolean(tournament.roomId && tournament.roomPassword);
 
