@@ -1,0 +1,163 @@
+{
+  "entities": {
+    "userProfile": {
+      "title": "UserProfile",
+      "description": "User profile with Free Fire credentials and dual wallet balances",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "ign": { "type": "string", "maxLength": 50 },
+        "freeFireUid": { "type": "string", "maxLength": 30 },
+        "depositBalance": { "type": "number" },
+        "winningsBalance": { "type": "number" },
+        "isBanned": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email", "ign", "freeFireUid"]
+    },
+    "tournament": {
+      "title": "Tournament",
+      "description": "Tournament match entity with prize pool and custom room info",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string" },
+        "mode": { "type": "string" },
+        "map": { "type": "string" },
+        "entryFee": { "type": "number" },
+        "totalPrizePool": { "type": "number" },
+        "perKillReward": { "type": "number" },
+        "rank1Prize": { "type": "number" },
+        "rank2Prize": { "type": "number" },
+        "rank3Prize": { "type": "number" },
+        "maxSlots": { "type": "number" },
+        "registeredCount": { "type": "number" },
+        "startTime": { "type": "string" },
+        "status": { "type": "string" },
+        "roomId": { "type": "string", "maxLength": 50 },
+        "roomPassword": { "type": "string", "maxLength": 50 },
+        "roomUnlockedAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "category", "mode", "entryFee", "maxSlots", "startTime", "status"]
+    },
+    "registration": {
+      "title": "Registration",
+      "description": "Player slot registration in a tournament",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tournamentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userIgn": { "type": "string" },
+        "userFreeFireUid": { "type": "string" },
+        "slotNumber": { "type": "number" },
+        "entryFeePaid": { "type": "number" },
+        "registeredAt": { "type": "string" }
+      },
+      "required": ["tournamentId", "userId", "userIgn", "userFreeFireUid", "slotNumber"]
+    },
+    "depositRequest": {
+      "title": "DepositRequest",
+      "description": "Manual UPI QR deposit proof request",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userIgn": { "type": "string" },
+        "amount": { "type": "number" },
+        "utrNumber": { "type": "string", "maxLength": 30 },
+        "proofUrl": { "type": "string" },
+        "status": { "type": "string" },
+        "adminNote": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string" },
+        "reviewedAt": { "type": "string" }
+      },
+      "required": ["userId", "userEmail", "amount", "utrNumber", "status"]
+    },
+    "withdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Winnings cash withdrawal request via UPI or Google Play redeem code",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userIgn": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string" },
+        "upiId": { "type": "string", "maxLength": 80 },
+        "deliveryEmail": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string" },
+        "payoutUtr": { "type": "string", "maxLength": 50 },
+        "redeemCode": { "type": "string", "maxLength": 100 },
+        "adminNote": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string" },
+        "processedAt": { "type": "string" }
+      },
+      "required": ["userId", "userEmail", "amount", "method", "status"]
+    },
+    "adminSettings": {
+      "title": "AdminSettings",
+      "description": "Global tournament & payment configuration",
+      "type": "object",
+      "properties": {
+        "upiId": { "type": "string", "maxLength": 100 },
+        "upiName": { "type": "string", "maxLength": 100 },
+        "qrCodeUrl": { "type": "string" },
+        "supportWhatsapp": { "type": "string", "maxLength": 20 },
+        "minDeposit": { "type": "number" },
+        "minWithdrawal": { "type": "number" },
+        "rules": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["upiId"]
+    },
+    "adminUser": {
+      "title": "AdminUser",
+      "description": "Authorized admin account record",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "userProfile",
+      "description": "User profiles with wallet balances and gaming credentials"
+    },
+    "/tournaments/{tournamentId}": {
+      "schema": "tournament",
+      "description": "Tournaments and match rooms"
+    },
+    "/tournaments/{tournamentId}/registrations/{registrationId}": {
+      "schema": "registration",
+      "description": "Tournament slot entries"
+    },
+    "/depositRequests/{depositId}": {
+      "schema": "depositRequest",
+      "description": "Manual UPI deposit approval queue"
+    },
+    "/withdrawalRequests/{withdrawalId}": {
+      "schema": "withdrawalRequest",
+      "description": "Winnings payout queue for UPI and Play Redeem Codes"
+    },
+    "/settings/{settingId}": {
+      "schema": "adminSettings",
+      "description": "Global admin configuration"
+    },
+    "/admins/{userId}": {
+      "schema": "adminUser",
+      "description": "Admin whitelist collection"
+    }
+  }
+}

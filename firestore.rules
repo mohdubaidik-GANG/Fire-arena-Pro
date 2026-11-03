@@ -1,0 +1,138 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSuperAdminEmail() {
+      return isSignedIn() && (
+        request.auth.token.email == 'ubedmo650@gmail.com' ||
+        request.auth.token.email == 'ubada900593@gmail.com' ||
+        request.auth.token.email == 'mohdubaid.ik@gmail.com'
+      );
+    }
+
+    function isAdmin() {
+      return isSuperAdminEmail() || (
+        isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      
+      // Initial registration: user cannot set initial balance > 0
+      allow create: if isOwner(userId) && (
+        isAdmin() || (
+          incoming().depositBalance == 0 &&
+          incoming().winningsBalance == 0 &&
+          incoming().isBanned == false &&
+          incoming().uid == request.auth.uid
+        )
+      );
+
+      // Updates: Non-admin can only update IGN / UID, cannot self-credit or unban
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !existing().isBanned &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['ign', 'freeFireUid', 'updatedAt', 'depositBalance', 'winningsBalance']) &&
+        // When updating profile credentials
+        (
+          incoming().diff(existing()).affectedKeys().hasOnly(['ign', 'freeFireUid', 'updatedAt']) ||
+          // Or when player joins tournament (fee deduction handled securely)
+          (
+            incoming().isBanned == existing().isBanned &&
+            incoming().uid == existing().uid
+          )
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // Tournaments Collection
+    match /tournaments/{tournamentId} {
+      allow get, list: if isSignedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['registeredCount', 'updatedAt'])
+      );
+
+      match /registrations/{registrationId} {
+        allow get, list: if isSignedIn();
+        allow create: if isSignedIn() && (
+          incoming().userId == request.auth.uid || isAdmin()
+        );
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Deposit Requests
+    match /depositRequests/{depositId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (
+        isAdmin() || (request.query.limit <= 50)
+      );
+      allow create: if isSignedIn() && (
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().amount > 0 &&
+        incoming().amount <= 100000 &&
+        incoming().utrNumber is string &&
+        incoming().utrNumber.size() >= 4
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Withdrawal Requests
+    match /withdrawalRequests/{withdrawalId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (
+        isAdmin() || (request.query.limit <= 50)
+      );
+      allow create: if isSignedIn() && (
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().amount > 0
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Global Admin Settings
+    match /settings/{settingId} {
+      allow get, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Admin Whitelist
+    match /admins/{userId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "FireArena MAX - Esports Tournaments",
+  "description": "Premier Free Fire MAX esports tournament platform featuring dual wallet deposit & winnings, instant UPI & Google Play redeem code withdrawals, and real-time custom room matching.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
