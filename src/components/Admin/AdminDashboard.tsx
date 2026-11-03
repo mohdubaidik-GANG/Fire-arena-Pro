@@ -93,16 +93,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // Real-time Listeners for all collections
   useEffect(() => {
-    // 1. Tournaments Listener
+    // 1. Tournaments and Matches Listener (Unified)
+    const tourneysMap = new Map<string, Tournament>();
+    const updateTournamentsState = () => {
+      const list = Array.from(tourneysMap.values());
+      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      setTournaments(list);
+    };
+
     const unsubTournaments = onSnapshot(
       collection(db, 'tournaments'),
       (snapshot) => {
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as Tournament));
-        list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-        setTournaments(list);
+        snapshot.docs.forEach((d) => {
+          tourneysMap.set(d.id, { id: d.id, ...d.data() } as Tournament);
+        });
+        updateTournamentsState();
       },
       (error) => {
         console.error('Error fetching tournaments:', error);
+      }
+    );
+
+    const unsubMatches = onSnapshot(
+      collection(db, 'matches'),
+      (snapshot) => {
+        snapshot.docs.forEach((d) => {
+          const data = d.data();
+          tourneysMap.set(d.id, {
+            id: d.id,
+            title: data.title || 'Free Fire CS Match',
+            category: data.category || 'battle_royale',
+            mode: data.mode || 'Solo',
+            map: data.map || data.mapName || 'Bermuda',
+            entryFee: Number(data.entryFee) || 0,
+            perKillReward: Number(data.perKill) || 0,
+            totalPrizePool: Number(data.totalPool) || 0,
+            rank1Prize: Number(data.rank1) || 0,
+            rank2Prize: Number(data.rank2) || 0,
+            rank3Prize: 0,
+            maxSlots: Number(data.maxSlots) || 2,
+            registeredCount: Array.isArray(data.joinedPlayers) ? data.joinedPlayers.length : (data.registeredCount || 0),
+            startTime: data.startTime || new Date().toISOString(),
+            status: ((data.status || 'UPCOMING').toLowerCase() === 'upcoming' ? 'upcoming' : data.status) as TournamentStatus,
+            roomId: data.roomId || '',
+            roomPassword: data.roomPassword || '',
+            createdAt: data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
+            ...data,
+          } as unknown as Tournament);
+        });
+        updateTournamentsState();
+      },
+      (error) => {
+        console.warn('Matches subscription note:', error);
       }
     );
 
@@ -159,6 +202,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     return () => {
       unsubTournaments();
+      unsubMatches();
       unsubDeposits();
       unsubWithdrawals();
       unsubUsers();
@@ -310,9 +354,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           transaction.delete(regDocRef);
         }
 
-        // Delete the tournament document from Firestore
+        // Delete the tournament document from Firestore (tournaments and matches)
         const tourRef = doc(db, 'tournaments', t.id);
         transaction.delete(tourRef);
+        const matchRef = doc(db, 'matches', t.id);
+        transaction.delete(matchRef);
       });
 
       alert(
@@ -1132,85 +1178,73 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
     try {
       setCreating(true);
 
-      const titleClean = (matchTitle.trim() || 'Free Fire MAX Clash');
-      const numEntryFee = Number(entryFee || 0);
-      const numPerKill = Number(perKill || 0);
-      const numTotalPool = Number(totalPool || 0);
-      const numRank1 = Number(rank1 || 0);
-      const numRank2 = Number(rank2 || 0);
-      const numMaxSlots = Number(maxSlots || 2);
-      const startIso = startTime ? new Date(startTime).toISOString() : new Date().toISOString();
-      const nowIso = new Date().toISOString();
-
-      // Ensure payload uses Number(field || 0) for database
-      const payload = {
-        title: titleClean,
-        category,
-        mode,
-        mapName,
-        map: mapName,
-        entryFee: numEntryFee,
-        perKill: numPerKill,
-        perKillReward: numPerKill,
-        totalPool: numTotalPool,
-        totalPrizePool: numTotalPool,
-        rank1: numRank1,
-        rank1Prize: numRank1,
-        rank2: numRank2,
-        rank2Prize: numRank2,
-        rank3Prize: 0,
-        maxSlots: numMaxSlots,
-        registeredCount: 0,
-        startTime: startIso,
-        joinedPlayers: [],
+      const newMatch = {
+        title: String(matchTitle || '').trim() || 'Free Fire CS Match',
+        category: String(category || 'CS 1v1'),
+        mode: String(mode || 'Solo'),
+        map: String(mapName || 'Bermuda'),
+        entryFee: Number(entryFee) || 0,
+        perKill: Number(perKill) || 0,
+        totalPool: Number(totalPool) || 0,
+        rank1: Number(rank1) || 0,
+        rank2: Number(rank2) || 0,
+        maxSlots: Number(maxSlots) || 2,
+        startTime: startTime ? String(startTime) : new Date().toISOString(),
+        joinedPlayers: [] as string[],
         status: 'UPCOMING',
         roomId: '',
         roomPassword: '',
-        createdAt: nowIso,
-        updatedAt: nowIso,
+        createdAt: new Date().toISOString()
       };
 
-      // Add document to tournaments collection (main active collection)
-      await addDoc(collection(db, 'tournaments'), {
-        ...payload,
-        status: 'upcoming' as TournamentStatus,
+      // 4-second safety timeout protection: NEVER stay stuck on "Creating..."
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error('Operation timed out (4s safety limit). Firestore did not respond in time.'));
+        }, 4000);
       });
 
-      // Also ensure document is in matches collection
+      // Write to collection 'matches'
+      const matchDocRef = await Promise.race([
+        addDoc(collection(db, 'matches'), newMatch),
+        timeoutPromise
+      ]);
+
+      // Mirror to 'tournaments' collection for full backwards compatibility
       try {
-        await addDoc(collection(db, 'matches'), {
-          title: titleClean,
-          category,
-          mode,
-          mapName,
-          entryFee: numEntryFee,
-          perKill: numPerKill,
-          totalPool: numTotalPool,
-          rank1: numRank1,
-          rank2: numRank2,
-          maxSlots: numMaxSlots,
-          startTime: startIso,
-          joinedPlayers: [],
-          status: 'UPCOMING',
-          roomId: '',
-          roomPassword: '',
-          createdAt: nowIso,
+        await setDoc(doc(db, 'tournaments', matchDocRef.id), {
+          ...newMatch,
+          id: matchDocRef.id,
+          mapName: newMatch.map,
+          perKillReward: newMatch.perKill,
+          totalPrizePool: newMatch.totalPool,
+          rank1Prize: newMatch.rank1,
+          rank2Prize: newMatch.rank2,
+          rank3Prize: 0,
+          registeredCount: 0,
+          status: 'upcoming' as TournamentStatus,
+          updatedAt: newMatch.createdAt,
         });
-      } catch (errMatches) {
-        console.warn('Matches collection sync note:', errMatches);
+      } catch (mirrorErr) {
+        console.warn('Tournaments mirror sync note:', mirrorErr);
       }
 
-      alert('Tournament Created Successfully!');
+      alert("Tournament created successfully!");
       resetForm();
       onClose();
-    } catch (err: unknown) {
-      console.error('Tournament Creation Error:', err);
-      const msg = err instanceof Error ? err.message : String(err);
-      alert('Failed to create tournament: ' + msg);
+    } catch (error: unknown) {
+      console.error("Match creation error:", error);
+      const msg = error instanceof Error ? error.message : String(error);
+      alert("Failed to create match: " + msg);
     } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       setCreating(false);
     }
   };

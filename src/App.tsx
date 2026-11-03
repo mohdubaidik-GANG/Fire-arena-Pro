@@ -148,21 +148,28 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [myRegistrations, setMyRegistrations] = useState<Record<string, TournamentRegistration>>({});
   const [fetchingTournaments, setFetchingTournaments] = useState(true);
 
-  // Realtime Tournaments Listener & Auto-Seeding
+  // Realtime Tournaments & Matches Listener & Auto-Seeding
   useEffect(() => {
-    const q = collection(db, 'tournaments');
-    const unsub = onSnapshot(
-      q,
+    const tourneyMap = new Map<string, Tournament>();
+
+    const updateState = () => {
+      const list = Array.from(tourneyMap.values());
+      list.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      setTournaments(list);
+      setFetchingTournaments(false);
+    };
+
+    const unsubTournaments = onSnapshot(
+      collection(db, 'tournaments'),
       async (snapshot) => {
-        if (snapshot.empty) {
-          // Auto-seed initial official Free Fire MAX tournaments
+        if (snapshot.empty && tourneyMap.size === 0) {
           await seedDefaultTournaments();
           setFetchingTournaments(false);
         } else {
-          const list = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() } as Tournament));
-          list.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-          setTournaments(list);
-          setFetchingTournaments(false);
+          snapshot.docs.forEach((docSnap) => {
+            tourneyMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Tournament);
+          });
+          updateState();
         }
       },
       (error) => {
@@ -171,7 +178,45 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       }
     );
 
-    return () => unsub();
+    const unsubMatches = onSnapshot(
+      collection(db, 'matches'),
+      (snapshot) => {
+        snapshot.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          tourneyMap.set(docSnap.id, {
+            id: docSnap.id,
+            title: data.title || 'Free Fire CS Match',
+            category: data.category || 'battle_royale',
+            mode: data.mode || 'Solo',
+            map: data.map || data.mapName || 'Bermuda',
+            entryFee: Number(data.entryFee) || 0,
+            perKillReward: Number(data.perKill) || 0,
+            totalPrizePool: Number(data.totalPool) || 0,
+            rank1Prize: Number(data.rank1) || 0,
+            rank2Prize: Number(data.rank2) || 0,
+            rank3Prize: 0,
+            maxSlots: Number(data.maxSlots) || 2,
+            registeredCount: Array.isArray(data.joinedPlayers) ? data.joinedPlayers.length : (data.registeredCount || 0),
+            startTime: data.startTime || new Date().toISOString(),
+            status: ((data.status || 'UPCOMING').toLowerCase() === 'upcoming' ? 'upcoming' : data.status) as any,
+            roomId: data.roomId || '',
+            roomPassword: data.roomPassword || '',
+            createdAt: data.createdAt || new Date().toISOString(),
+            updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
+            ...data,
+          } as unknown as Tournament);
+        });
+        updateState();
+      },
+      (error) => {
+        console.warn('Matches query note:', error);
+      }
+    );
+
+    return () => {
+      unsubTournaments();
+      unsubMatches();
+    };
   }, []);
 
   // Listen to user's registered tournaments
