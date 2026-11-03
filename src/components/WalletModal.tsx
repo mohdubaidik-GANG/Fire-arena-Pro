@@ -253,25 +253,37 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       return;
     }
 
-    if (withdrawMethod === 'upi' && !withdrawUpiId.trim().includes('@')) {
+    const payoutEmail = user?.email || '';
+    const cleanUpi = (withdrawUpiId || '').trim();
+    const payoutMethod = withdrawMethod || 'upi';
+    const fallbackDeliveryEmail = user?.email || payoutEmail || '';
+
+    if (payoutMethod === 'upi' && !cleanUpi.includes('@')) {
       setWithdrawError('Please enter a valid UPI ID (e.g., yourname@okaxis or number@paytm)');
       return;
     }
 
     setWithdrawSubmitting(true);
     try {
-      // 1. Create withdrawal request document
-      const newWithdrawal: Omit<WithdrawalRequest, 'id'> = {
-        userId: user.uid,
-        userEmail: user.email || '',
-        userIgn: profile.ign,
-        amount,
-        method: withdrawMethod,
-        upiId: withdrawMethod === 'upi' ? withdrawUpiId.trim() : undefined,
-        deliveryEmail: withdrawMethod === 'redeem_code' ? user.email || '' : undefined,
+      // 1. Create withdrawal request document with guaranteed non-undefined values
+      const newWithdrawal: Record<string, any> = {
+        userId: user.uid || '',
+        userEmail: payoutEmail,
+        userIgn: profile.ign || 'Gamer',
+        amount: Number(amount) || 0,
+        method: payoutMethod,
+        upiId: payoutMethod === 'upi' ? cleanUpi : '',
+        deliveryEmail: fallbackDeliveryEmail,
         status: 'pending',
         createdAt: new Date().toISOString(),
       };
+
+      // Ensure NO field in the object can ever be undefined
+      Object.keys(newWithdrawal).forEach((key) => {
+        if (newWithdrawal[key] === undefined) {
+          newWithdrawal[key] = '';
+        }
+      });
 
       await addDoc(collection(db, 'withdrawalRequests'), newWithdrawal);
 
@@ -281,12 +293,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         updatedAt: new Date().toISOString(),
       });
 
-      setWithdrawSuccessMsg(
-        `Withdrawal of ₹${amount} requested via ${
-          withdrawMethod === 'upi' ? 'UPI' : 'Google Play Redeem Code'
-        }. Processing queue time: 10-30 mins.`
-      );
+      // 3. Reset form and show clean green success toast
+      setWithdrawSuccessMsg('Withdrawal request submitted for Admin approval!');
       setWithdrawUpiId('');
+      setWithdrawAmount(adminSettings.minWithdrawal || 50);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to request withdrawal';
       setWithdrawError(msg);
@@ -601,9 +611,9 @@ export const WalletModal: React.FC<WalletModalProps> = ({
               </div>
 
               {withdrawSuccessMsg && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>{withdrawSuccessMsg}</span>
+                <div className="p-3.5 bg-emerald-500/20 border border-emerald-500/50 rounded-xl text-xs text-emerald-200 flex items-center gap-2.5 shadow-lg shadow-emerald-950/40">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <span className="font-semibold text-sm">{withdrawSuccessMsg}</span>
                 </div>
               )}
 

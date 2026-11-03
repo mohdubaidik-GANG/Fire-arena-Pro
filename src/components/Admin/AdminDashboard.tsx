@@ -1646,13 +1646,19 @@ const FulfillWithdrawalModal: React.FC<{ withdrawal: WithdrawalRequest; isOpen: 
     try {
       const trimmedCode = redeemCode.trim().toUpperCase();
 
-      // 1. Update Firestore withdrawal request
-      await updateDoc(doc(db, 'withdrawalRequests', withdrawal.id), {
+      // 1. Update Firestore withdrawal request with safe non-undefined fields
+      const updateData: Record<string, any> = {
         status: 'approved',
-        payoutUtr: withdrawal.method === 'upi' ? payoutUtr.trim() : undefined,
-        redeemCode: withdrawal.method === 'redeem_code' ? trimmedCode : undefined,
         processedAt: new Date().toISOString(),
-      });
+      };
+      if (withdrawal.method === 'upi') {
+        updateData.payoutUtr = payoutUtr.trim();
+      }
+      if (withdrawal.method === 'redeem_code') {
+        updateData.redeemCode = trimmedCode;
+      }
+
+      await updateDoc(doc(db, 'withdrawalRequests', withdrawal.id), updateData);
 
       // 2. Dispatch automated email via Nodemailer if method is redeem_code
       if (withdrawal.method === 'redeem_code') {
