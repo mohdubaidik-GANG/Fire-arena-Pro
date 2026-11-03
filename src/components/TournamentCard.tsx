@@ -38,7 +38,12 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
   const isLive = tournament.status?.toLowerCase() === 'live';
   const isCompleted = tournament.status?.toLowerCase() === 'completed';
 
-  const hasRoomCredentials = Boolean(tournament.roomId && tournament.roomPassword);
+  const hasRoomCredentials = Boolean(
+    tournament.roomId &&
+    tournament.roomId.trim() !== '' &&
+    tournament.roomPassword &&
+    tournament.roomPassword.trim() !== ''
+  );
 
   const handleCopy = (text: string, type: 'id' | 'pass') => {
     navigator.clipboard.writeText(text);
@@ -171,14 +176,14 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
             {hasRoomCredentials ? (
               <div className="pt-2 border-t border-amber-500/20 space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-mono">Room ID:</span>
+                  <span className="text-slate-300 font-mono font-medium">Room ID:</span>
                   <div className="flex items-center gap-2">
-                    <code className="px-2 py-1 bg-black/60 rounded text-amber-400 font-mono font-bold text-xs select-all">
+                    <code className="px-2.5 py-1 bg-black/80 rounded-lg text-amber-400 font-mono font-bold text-xs select-all border border-amber-500/30">
                       {tournament.roomId}
                     </code>
                     <button
                       onClick={() => handleCopy(tournament.roomId!, 'id')}
-                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
                       title="Copy Room ID"
                     >
                       {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -187,14 +192,14 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
                 </div>
 
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-slate-300 font-mono">Password:</span>
+                  <span className="text-slate-300 font-mono font-medium">Password:</span>
                   <div className="flex items-center gap-2">
-                    <code className="px-2 py-1 bg-black/60 rounded text-amber-400 font-mono font-bold text-xs select-all">
+                    <code className="px-2.5 py-1 bg-black/80 rounded-lg text-amber-400 font-mono font-bold text-xs select-all border border-amber-500/30">
                       {tournament.roomPassword}
                     </code>
                     <button
                       onClick={() => handleCopy(tournament.roomPassword!, 'pass')}
-                      className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
                       title="Copy Password"
                     >
                       {copiedPass ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -207,9 +212,14 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="pt-1 text-[11px] text-slate-400 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span>Room ID & Password will unlock here 15 mins before match start.</span>
+              <div className="pt-2 border-t border-amber-500/20">
+                <div className="p-2.5 rounded-xl bg-black/40 border border-amber-500/20 text-xs flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 animate-pulse" />
+                  <div>
+                    <p className="font-semibold text-white">Room ID & Password will be shared 15 mins before match</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Admin will manually publish the custom room details here once created in Free Fire MAX.</p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -219,7 +229,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
               <Lock className="w-3.5 h-3.5 text-slate-500" />
               <span>Room ID & Pass:</span>
             </span>
-            <span className="text-[11px] text-slate-500 font-mono">Locked for participants</span>
+            <span className="text-[11px] text-slate-500 font-mono">Room ID & Password will be shared 15 mins before match</span>
           </div>
         )}
 

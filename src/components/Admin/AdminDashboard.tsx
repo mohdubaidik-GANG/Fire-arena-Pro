@@ -614,13 +614,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       <div className="mt-3 p-2.5 rounded-xl bg-black/40 border border-slate-800/80 text-xs flex items-center justify-between">
                         <div className="flex items-center gap-1.5 text-slate-400">
                           <Key className="w-3.5 h-3.5 text-amber-400" />
-                          <span>Room:</span>
+                          <span>Room Details:</span>
                         </div>
                         <div className="font-mono">
                           {t.roomId ? (
-                            <span className="text-amber-400 font-bold">{t.roomId} / {t.roomPassword}</span>
+                            <span className="text-emerald-400 font-bold flex items-center gap-1 text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>ID: {t.roomId} · Pass: {t.roomPassword}</span>
+                            </span>
                           ) : (
-                            <span className="text-slate-500">Not Set</span>
+                            <span className="text-amber-400/90 flex items-center gap-1 text-[11px]">
+                              <Clock className="w-3 h-3 text-amber-400" />
+                              <span>Credentials Not Set (Pending Admin)</span>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -631,10 +637,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           onClick={() => setEditingRoomTour(t)}
-                          className="h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          className={`h-9 px-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                            t.roomId
+                              ? 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border-amber-500/30'
+                              : 'bg-amber-500 hover:bg-amber-400 text-black border-amber-500 font-bold shadow-md shadow-amber-500/20'
+                          }`}
+                          title="Manually enter Free Fire Custom Room ID and Password"
                         >
-                          <Key className="w-3.5 h-3.5" />
-                          <span>Room ID & Pass</span>
+                          <Key className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t.roomId ? 'Update Credentials' : 'Set Room Details'}</span>
                         </button>
 
                         {t.status?.toLowerCase() !== 'completed' ? (
@@ -1425,7 +1436,7 @@ const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose
 }) => {
   const [roomId, setRoomId] = useState(tournament.roomId || '');
   const [roomPassword, setRoomPassword] = useState(tournament.roomPassword || '');
-  const [status, setStatus] = useState(tournament.status);
+  const [status, setStatus] = useState(tournament.status || 'upcoming');
   const [isSaving, setIsSaving] = useState(false);
 
   if (!isOpen) return null;
@@ -1433,14 +1444,38 @@ const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    const trimmedId = roomId.trim();
+    const trimmedPass = roomPassword.trim();
+
     try {
-      await updateDoc(doc(db, 'tournaments', tournament.id), {
-        roomId: roomId.trim(),
-        roomPassword: roomPassword.trim(),
-        status,
-        roomUnlockedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
+      // 1. Update tournaments collection
+      try {
+        await updateDoc(doc(db, 'tournaments', tournament.id), {
+          roomId: trimmedId,
+          roomPassword: trimmedPass,
+          status,
+          roomUnlockedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (tourErr) {
+        console.warn('Update tournaments doc note:', tourErr);
+      }
+
+      // 2. Mirror update to matches collection
+      try {
+        const firestoreMatchStatus = status === 'live' ? 'LIVE' : status === 'completed' ? 'COMPLETED' : 'UPCOMING';
+        await updateDoc(doc(db, 'matches', tournament.id), {
+          roomId: trimmedId,
+          roomPassword: trimmedPass,
+          status: firestoreMatchStatus,
+          roomUnlockedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (matchErr) {
+        console.warn('Update matches doc note:', matchErr);
+      }
+
+      alert(`Room ID (${trimmedId}) & Password successfully published! Real-time credentials are now live on registered players' screens.`);
       onClose();
     } catch (err: unknown) {
       alert(`Error updating room details: ${err instanceof Error ? err.message : String(err)}`);
@@ -1452,33 +1487,49 @@ const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
       <div className="w-full max-w-md bg-[#0f0f1c] border border-amber-500/30 rounded-2xl p-5 sm:p-6 shadow-2xl">
-        <h3 className="text-base font-bold text-white font-heading mb-1">Update Custom Room Credentials</h3>
-        <p className="text-xs text-slate-400 mb-4">
-          Credentials unlock instantly on the phones of registered players only.
-        </p>
+        <div className="flex items-center gap-2.5 mb-2">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <Key className="w-4 h-4 stroke-[2.5]" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-white font-heading">Set Room Details / Update Credentials</h3>
+            <p className="text-[11px] text-amber-400/90 font-mono">Tournament: {tournament.title}</p>
+          </div>
+        </div>
+
+        <div className="p-3 mb-4 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] text-slate-300 space-y-1">
+          <p className="font-semibold text-white">Manual Custom Room Flow:</p>
+          <p>1. Open Free Fire MAX on your device & create a Custom Room.</p>
+          <p>2. Enter the generated Room ID & Room Password below.</p>
+          <p>3. Tap <strong className="text-amber-400">"Publish Room ID"</strong> to reveal credentials to joined players only.</p>
+        </div>
 
         <form onSubmit={handleSave} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-slate-300 mb-1">Free Fire Custom Room ID</label>
+            <label className="block font-semibold text-slate-300 mb-1">
+              Free Fire Custom Room ID <span className="text-amber-400">*</span>
+            </label>
             <input
               type="text"
               value={roomId}
               onChange={(e) => setRoomId(e.target.value)}
-              placeholder="e.g. 9812401"
+              placeholder="e.g. 7489231"
               required
-              className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-sm"
+              className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-sm focus:outline-none focus:border-amber-500"
             />
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-300 mb-1">Custom Room Password</label>
+            <label className="block font-semibold text-slate-300 mb-1">
+              Custom Room Password <span className="text-amber-400">*</span>
+            </label>
             <input
               type="text"
               value={roomPassword}
               onChange={(e) => setRoomPassword(e.target.value)}
               placeholder="e.g. 1234 or booyah"
               required
-              className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-sm"
+              className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-sm focus:outline-none focus:border-amber-500"
             />
           </div>
 
@@ -1487,9 +1538,9 @@ const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as any)}
-              className="w-full h-10 px-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
+              className="w-full h-10 px-2 rounded-xl bg-slate-900 border border-slate-800 text-white focus:outline-none focus:border-amber-500"
             >
-              <option value="upcoming">Upcoming (Pre-Match)</option>
+              <option value="upcoming">Upcoming (Pre-Match / Waiting for Players)</option>
               <option value="live">Live Match In-Progress</option>
               <option value="completed">Completed</option>
             </select>
@@ -1499,16 +1550,18 @@ const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300"
+              disabled={isSaving}
+              className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSaving}
-              className="px-5 py-2 rounded-xl bg-amber-500 font-bold text-black"
+              className="px-5 py-2 rounded-xl bg-amber-500 font-bold text-black hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
             >
-              {isSaving ? 'Broadcasting...' : 'Broadcast to Registered Players'}
+              <Key className="w-3.5 h-3.5" />
+              <span>{isSaving ? 'Publishing...' : 'Publish Room ID'}</span>
             </button>
           </div>
         </form>
