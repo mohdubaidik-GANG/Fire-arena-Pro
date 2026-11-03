@@ -105,7 +105,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       collection(db, 'tournaments'),
       (snapshot) => {
         snapshot.docs.forEach((d) => {
-          tourneysMap.set(d.id, { id: d.id, ...d.data() } as Tournament);
+          const data = d.data();
+          const existing = tourneysMap.get(d.id);
+          const joinedList = Array.isArray(data.joinedPlayers) && data.joinedPlayers.length > 0
+            ? data.joinedPlayers
+            : Array.isArray(existing?.joinedPlayers) && existing.joinedPlayers.length > 0
+            ? existing.joinedPlayers
+            : Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
+
+          tourneysMap.set(d.id, {
+            id: d.id,
+            ...data,
+            joinedPlayers: joinedList,
+            registeredCount: joinedList.length || Number(data.registeredCount) || 0,
+          } as Tournament);
         });
         updateTournamentsState();
       },
@@ -119,6 +132,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       (snapshot) => {
         snapshot.docs.forEach((d) => {
           const data = d.data();
+          const existing = tourneysMap.get(d.id);
+          const joinedList = Array.isArray(data.joinedPlayers) && data.joinedPlayers.length > 0
+            ? data.joinedPlayers
+            : Array.isArray(existing?.joinedPlayers) && existing.joinedPlayers.length > 0
+            ? existing.joinedPlayers
+            : Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
+
           tourneysMap.set(d.id, {
             id: d.id,
             title: data.title || 'Free Fire CS Match',
@@ -132,7 +152,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             rank2Prize: Number(data.rank2) || 0,
             rank3Prize: 0,
             maxSlots: Number(data.maxSlots) || 2,
-            registeredCount: Array.isArray(data.joinedPlayers) ? data.joinedPlayers.length : (data.registeredCount || 0),
             startTime: data.startTime || new Date().toISOString(),
             status: ((data.status || 'UPCOMING').toLowerCase() === 'upcoming' ? 'upcoming' : data.status) as TournamentStatus,
             roomId: data.roomId || '',
@@ -140,6 +159,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             createdAt: data.createdAt || new Date().toISOString(),
             updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
             ...data,
+            joinedPlayers: joinedList,
+            registeredCount: joinedList.length || Number(data.registeredCount) || 0,
           } as unknown as Tournament);
         });
         updateTournamentsState();
@@ -307,10 +328,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // Cancel and Delete Tournament with Automated Player Refunds
   const handleCancelAndDeleteTournament = async (t: Tournament) => {
+    const currentJoined = t.joinedPlayers ? t.joinedPlayers.length : (t.registeredCount || 0);
     const confirmationText =
       `Are you sure you want to cancel and delete this tournament: "${t.title}"?\n\n` +
-      (t.registeredCount > 0
-        ? `AUTOMATED REFUND NOTICE: ${t.registeredCount} registered player(s) will immediately receive an automated refund of their ₹${t.entryFee} entry fee into their Deposit Wallet!`
+      (currentJoined > 0
+        ? `AUTOMATED REFUND NOTICE: ${currentJoined} registered player(s) will immediately receive an automated refund of their ₹${t.entryFee} entry fee into their Deposit Wallet!`
         : `This match room will be permanently removed from the arena.`);
 
     if (!confirm(confirmationText)) {
@@ -318,7 +340,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
 
     try {
-      // 1. Fetch all registered players for this tournament
+      // 1. Fetch all registered players from subcollection
       const regsRef = collection(db, `tournaments/${t.id}/registrations`);
       const regsSnap = await getDocs(regsRef);
       const registrations = regsSnap.docs.map((docSnap) => ({
@@ -326,16 +348,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         ...docSnap.data(),
       })) as { id: string; userId: string; userIgn?: string; entryFeePaid?: number }[];
 
+      // Collect all user IDs to refund (from subcollection AND from joinedPlayers array)
+      const userRefundMap = new Map<string, number>();
+      registrations.forEach((r) => {
+        if (r.userId) {
+          userRefundMap.set(r.userId, r.entryFeePaid || t.entryFee || 0);
+        }
+      });
+      if (Array.isArray(t.joinedPlayers)) {
+        t.joinedPlayers.forEach((p) => {
+          if (p.uid && !userRefundMap.has(p.uid)) {
+            userRefundMap.set(p.uid, t.entryFee || 0);
+          }
+        });
+      }
+
       let refundedUsersCount = 0;
       let totalRefundedAmount = 0;
 
       // 2. Perform atomic refund and tournament deletion in a Firestore transaction
       await runTransaction(db, async (transaction) => {
         // Refund each registered player
-        for (const reg of registrations) {
-          const refundAmount = reg.entryFeePaid || t.entryFee || 0;
-          if (reg.userId && refundAmount > 0) {
-            const userRef = doc(db, 'users', reg.userId);
+        for (const [userId, refundAmount] of userRefundMap.entries()) {
+          if (refundAmount > 0) {
+            const userRef = doc(db, 'users', userId);
             const userSnap = await transaction.get(userRef);
 
             if (userSnap.exists()) {
@@ -348,8 +384,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               totalRefundedAmount += refundAmount;
             }
           }
+        }
 
-          // Delete subcollection registration doc
+        // Delete subcollection registration docs
+        for (const reg of registrations) {
           const regDocRef = doc(db, `tournaments/${t.id}/registrations`, reg.id);
           transaction.delete(regDocRef);
         }
@@ -592,7 +630,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
                       <h3 className="text-base font-bold text-white font-heading">{t.title}</h3>
                       <p className="text-xs text-slate-400 mt-1">
-                        Map: <strong className="text-slate-300">{t.map || (t as any).mapName}</strong> · Slots: <strong className="text-amber-400 font-mono">{t.registeredCount || 0}/{t.maxSlots}</strong>
+                        Map: <strong className="text-slate-300">{t.map || (t as any).mapName}</strong> · Slots: <strong className="text-amber-400 font-mono">{t.joinedPlayers ? t.joinedPlayers.length : 0} / {t.maxSlots} Joined</strong>
                       </p>
 
                       <div className="grid grid-cols-3 gap-2 mt-3 p-2.5 rounded-xl bg-slate-900 text-center text-xs">
@@ -673,7 +711,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         title="Cancel match and refund all registered players"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete / Cancel Match ({t.registeredCount || 0} to refund)</span>
+                        <span>Delete / Cancel Match ({t.joinedPlayers ? t.joinedPlayers.length : 0} to refund)</span>
                       </button>
                     </div>
                   </div>
@@ -1206,7 +1244,7 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
         rank2: Number(rank2) || 0,
         maxSlots: Number(maxSlots) || 2,
         startTime: startTime ? String(startTime) : new Date().toISOString(),
-        joinedPlayers: [] as string[],
+        joinedPlayers: [] as Array<{ uid: string; ign: string; email?: string; joinedAt?: string }>,
         status: 'UPCOMING',
         roomId: '',
         roomPassword: '',
@@ -1238,6 +1276,7 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
           rank2Prize: newMatch.rank2,
           rank3Prize: 0,
           registeredCount: 0,
+          joinedPlayers: [],
           status: 'upcoming' as TournamentStatus,
           updatedAt: newMatch.createdAt,
         });
@@ -1593,13 +1632,28 @@ const DeclareResultsModal: React.FC<{ tournament: Tournament; isOpen: boolean; o
         userIgn: d.data().userIgn,
         kills: 0,
       }));
+
+      // Also merge players from tournament.joinedPlayers if not present in subcollection
+      if (Array.isArray(tournament.joinedPlayers)) {
+        tournament.joinedPlayers.forEach((p) => {
+          if (p.uid && !list.some((item) => item.userId === p.uid)) {
+            list.push({
+              id: `${tournament.id}_${p.uid}`,
+              userId: p.uid,
+              userIgn: p.ign || 'Gamer',
+              kills: 0,
+            });
+          }
+        });
+      }
+
       setRegistrations(list);
       if (list[0]) setRank1UserId(list[0].userId);
       if (list[1]) setRank2UserId(list[1].userId);
       if (list[2]) setRank3UserId(list[2].userId);
     };
     fetchRegs();
-  }, [isOpen, tournament.id]);
+  }, [isOpen, tournament.id, tournament.joinedPlayers]);
 
   if (!isOpen) return null;
 

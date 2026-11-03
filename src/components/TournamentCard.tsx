@@ -16,6 +16,7 @@ import {
   Zap
 } from 'lucide-react';
 import { Tournament, TournamentRegistration } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface TournamentCardProps {
   tournament: Tournament;
@@ -30,11 +31,15 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
   onJoinClick,
   onViewDetails,
 }) => {
+  const { user } = useAuth();
   const [copiedId, setCopiedId] = useState(false);
   const [copiedPass, setCopiedPass] = useState(false);
 
-  const isJoined = Boolean(userRegistration);
-  const isFull = tournament.registeredCount >= tournament.maxSlots;
+  // Requirement 2: Har match card par joined players ka number direct Firestore document ke array length se count hona chahiye
+  const currentJoined = tournament.joinedPlayers ? tournament.joinedPlayers.length : 0;
+  const isRegisteredInList = Boolean(user?.uid && tournament.joinedPlayers?.some((p) => p.uid === user.uid));
+  const isJoined = Boolean(userRegistration || isRegisteredInList);
+  const isFull = currentJoined >= tournament.maxSlots;
   const isLive = tournament.status?.toLowerCase() === 'live';
   const isCompleted = tournament.status?.toLowerCase() === 'completed';
 
@@ -67,7 +72,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
     }
   };
 
-  const slotsPercent = Math.min(100, Math.round((tournament.registeredCount / tournament.maxSlots) * 100));
+  const slotsPercent = Math.min(100, Math.round((currentJoined / tournament.maxSlots) * 100));
 
   // Format start time
   const startDate = new Date(tournament.startTime);
@@ -146,7 +151,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
               <span>Registered Slots</span>
             </span>
             <span className="font-mono font-semibold text-slate-200">
-              {tournament.registeredCount} / {tournament.maxSlots}
+              {currentJoined} / {tournament.maxSlots} Joined
             </span>
           </div>
 
@@ -277,7 +282,17 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
           </button>
         ) : (
           <button
-            onClick={() => onJoinClick(tournament)}
+            onClick={() => {
+              if (isJoined || isRegisteredInList) {
+                alert("Aap is match me pehle se registered hain!");
+                return;
+              }
+              if (isFull) {
+                alert("Match slots full!");
+                return;
+              }
+              onJoinClick(tournament);
+            }}
             className="w-full h-11 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer"
           >
             <Zap className="w-4 h-4 fill-black" />

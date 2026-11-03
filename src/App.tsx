@@ -167,7 +167,20 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
           setFetchingTournaments(false);
         } else {
           snapshot.docs.forEach((docSnap) => {
-            tourneyMap.set(docSnap.id, { id: docSnap.id, ...docSnap.data() } as Tournament);
+            const data = docSnap.data();
+            const existing = tourneyMap.get(docSnap.id);
+            const joinedList = Array.isArray(data.joinedPlayers) && data.joinedPlayers.length > 0
+              ? data.joinedPlayers
+              : Array.isArray(existing?.joinedPlayers) && existing.joinedPlayers.length > 0
+              ? existing.joinedPlayers
+              : Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
+
+            tourneyMap.set(docSnap.id, {
+              id: docSnap.id,
+              ...data,
+              joinedPlayers: joinedList,
+              registeredCount: joinedList.length || Number(data.registeredCount) || 0,
+            } as Tournament);
           });
           updateState();
         }
@@ -183,6 +196,13 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       (snapshot) => {
         snapshot.docs.forEach((docSnap) => {
           const data = docSnap.data();
+          const existing = tourneyMap.get(docSnap.id);
+          const joinedList = Array.isArray(data.joinedPlayers) && data.joinedPlayers.length > 0
+            ? data.joinedPlayers
+            : Array.isArray(existing?.joinedPlayers) && existing.joinedPlayers.length > 0
+            ? existing.joinedPlayers
+            : Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
+
           tourneyMap.set(docSnap.id, {
             id: docSnap.id,
             title: data.title || 'Free Fire CS Match',
@@ -190,13 +210,12 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             mode: data.mode || 'Solo',
             map: data.map || data.mapName || 'Bermuda',
             entryFee: Number(data.entryFee) || 0,
-            perKillReward: Number(data.perKill) || 0,
-            totalPrizePool: Number(data.totalPool) || 0,
-            rank1Prize: Number(data.rank1) || 0,
-            rank2Prize: Number(data.rank2) || 0,
-            rank3Prize: 0,
+            perKillReward: Number(data.perKill) || Number(data.perKillReward) || 0,
+            totalPrizePool: Number(data.totalPool) || Number(data.totalPrizePool) || 0,
+            rank1Prize: Number(data.rank1) || Number(data.rank1Prize) || 0,
+            rank2Prize: Number(data.rank2) || Number(data.rank2Prize) || 0,
+            rank3Prize: Number(data.rank3) || 0,
             maxSlots: Number(data.maxSlots) || 2,
-            registeredCount: Array.isArray(data.joinedPlayers) ? data.joinedPlayers.length : (data.registeredCount || 0),
             startTime: data.startTime || new Date().toISOString(),
             status: ((data.status || 'UPCOMING').toLowerCase() === 'upcoming' ? 'upcoming' : data.status) as any,
             roomId: data.roomId || '',
@@ -204,6 +223,8 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             createdAt: data.createdAt || new Date().toISOString(),
             updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
             ...data,
+            joinedPlayers: joinedList,
+            registeredCount: joinedList.length || Number(data.registeredCount) || 0,
           } as unknown as Tournament);
         });
         updateState();
@@ -226,6 +247,25 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     const unsubs: (() => void)[] = [];
 
     tournaments.forEach((t) => {
+      // Direct detection from tournament.joinedPlayers
+      if (t.joinedPlayers?.some((p) => p.uid === user.uid)) {
+        const playerIdx = t.joinedPlayers.findIndex((p) => p.uid === user.uid);
+        setMyRegistrations((prev) => ({
+          ...prev,
+          [t.id]: {
+            id: `${t.id}_${user.uid}`,
+            tournamentId: t.id,
+            userId: user.uid,
+            userEmail: user.email || '',
+            userIgn: profile?.ign || 'Gamer',
+            userFreeFireUid: profile?.freeFireUid || '',
+            slotNumber: playerIdx + 1,
+            entryFeePaid: t.entryFee,
+            registeredAt: t.joinedPlayers![playerIdx]?.joinedAt || new Date().toISOString(),
+          },
+        }));
+      }
+
       const regRef = doc(db, `tournaments/${t.id}/registrations`, `${t.id}_${user.uid}`);
       const unsub = onSnapshot(
         regRef,
@@ -236,11 +276,14 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               [t.id]: snap.data() as TournamentRegistration,
             }));
           } else {
-            setMyRegistrations((prev) => {
-              const updated = { ...prev };
-              delete updated[t.id];
-              return updated;
-            });
+            // Keep registration if user is listed in t.joinedPlayers
+            if (!t.joinedPlayers?.some((p) => p.uid === user.uid)) {
+              setMyRegistrations((prev) => {
+                const updated = { ...prev };
+                delete updated[t.id];
+                return updated;
+              });
+            }
           }
         },
         () => {
@@ -253,7 +296,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     return () => {
       unsubs.forEach((u) => u());
     };
-  }, [user, tournaments]);
+  }, [user, tournaments, profile]);
 
   // Seed 3 tournaments if database has no tournaments
   const seedDefaultTournaments = async () => {

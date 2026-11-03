@@ -14,6 +14,13 @@ export type TournamentCategory = 'battle_royale' | 'clash_squad_1v1' | 'clash_sq
 export type TournamentMode = 'Solo' | 'Duo' | 'Squad';
 export type TournamentStatus = 'upcoming' | 'live' | 'completed' | 'cancelled';
 
+export interface JoinedPlayer {
+  uid: string;
+  ign: string;
+  email?: string;
+  joinedAt?: string;
+}
+
 export interface Tournament {
   id: string;
   title: string;
@@ -28,6 +35,7 @@ export interface Tournament {
   rank3Prize: number;
   maxSlots: number;
   registeredCount: number;
+  joinedPlayers?: JoinedPlayer[];
   startTime: string; // ISO string
   status: TournamentStatus;
   roomId?: string;

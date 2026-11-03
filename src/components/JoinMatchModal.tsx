@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Trophy, Crosshair, AlertCircle, CheckCircle2, ArrowRight, ShieldCheck, Wallet } from 'lucide-react';
-import { doc, runTransaction, collection, setDoc } from 'firebase/firestore';
+import { doc, runTransaction, collection, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Tournament, TournamentRegistration } from '../types';
@@ -26,6 +26,7 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
 
   if (!isOpen || !tournament || !user || !profile) return null;
 
+  const currentJoined = tournament.joinedPlayers ? tournament.joinedPlayers.length : 0;
   const entryFee = tournament.entryFee;
   const depositBal = profile.depositBalance || 0;
   const winningsBal = profile.winningsBalance || 0;
@@ -34,6 +35,18 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
   const hasEnoughFunds = totalAvailable >= entryFee;
 
   const handleJoin = async () => {
+    // 1. Duplicate Registration Prevention
+    if (tournament.joinedPlayers?.some((p) => p.uid === user.uid)) {
+      alert("Aap is match me pehle se registered hain!");
+      return;
+    }
+
+    // 2. Slot Capacity Check
+    if (currentJoined >= tournament.maxSlots) {
+      alert("Match slots full!");
+      return;
+    }
+
     if (!hasEnoughFunds) {
       setError(`Insufficient balance. You need ₹${entryFee} to join this match.`);
       return;
@@ -48,24 +61,8 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
     setError(null);
 
     try {
-      // Execute join using Firestore transaction for slot concurrency and balance safety
+      // Execute wallet deduction atomically in Firestore
       await runTransaction(db, async (transaction) => {
-        const tourRef = doc(db, 'tournaments', tournament.id);
-        const tourSnap = await transaction.get(tourRef);
-
-        if (!tourSnap.exists()) {
-          throw new Error('Tournament does not exist or has been removed.');
-        }
-
-        const tourData = tourSnap.data() as Tournament;
-        if (tourData.status?.toLowerCase() !== 'upcoming') {
-          throw new Error('This tournament is no longer accepting new registrations.');
-        }
-
-        if (tourData.registeredCount >= tourData.maxSlots) {
-          throw new Error('Tournament slots are full.');
-        }
-
         const userRef = doc(db, 'users', user.uid);
         const userSnap = await transaction.get(userRef);
         const userData = userSnap.data();
@@ -85,30 +82,46 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
         const newDepositBal = currentDep - deductDep;
         const newWinningsBal = currentWin - deductWin;
 
-        const nextSlot = (tourData.registeredCount || 0) + 1;
-        const regId = `${tournament.id}_${user.uid}`;
-        const regRef = doc(db, `tournaments/${tournament.id}/registrations`, regId);
-
-        // Check if already registered
-        const existingRegSnap = await transaction.get(regRef);
-        if (existingRegSnap.exists()) {
-          throw new Error('You have already joined this tournament.');
-        }
-
-        // 1. Update Tournament count
-        transaction.update(tourRef, {
-          registeredCount: nextSlot,
-          updatedAt: new Date().toISOString(),
-        });
-
-        // 2. Update User wallet balances
         transaction.update(userRef, {
           depositBalance: newDepositBal,
           winningsBalance: newWinningsBal,
           updatedAt: new Date().toISOString(),
         });
+      });
 
-        // 3. Create Registration Document
+      // Prepare player payload for arrayUnion
+      const playerRecord = {
+        uid: user.uid,
+        ign: profile.ign || (user as any).displayName || 'Gamer',
+        email: user.email || '',
+        joinedAt: new Date().toISOString(),
+      };
+
+      // 1. Realtime Firestore Tracking: Update 'matches' document using arrayUnion
+      try {
+        await updateDoc(doc(db, 'matches', tournament.id), {
+          joinedPlayers: arrayUnion(playerRecord),
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (matchErr) {
+        console.warn('Match doc arrayUnion note:', matchErr);
+      }
+
+      // 2. Also update 'tournaments' document using arrayUnion and updated registeredCount
+      try {
+        await updateDoc(doc(db, 'tournaments', tournament.id), {
+          joinedPlayers: arrayUnion(playerRecord),
+          registeredCount: currentJoined + 1,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (tourErr) {
+        console.warn('Tournaments doc arrayUnion note:', tourErr);
+      }
+
+      // 3. Keep registration document in subcollection for receipt & historical query
+      try {
+        const regId = `${tournament.id}_${user.uid}`;
+        const regRef = doc(db, `tournaments/${tournament.id}/registrations`, regId);
         const newReg: TournamentRegistration = {
           id: regId,
           tournamentId: tournament.id,
@@ -116,13 +129,14 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
           userEmail: user.email || '',
           userIgn: profile.ign,
           userFreeFireUid: profile.freeFireUid,
-          slotNumber: nextSlot,
+          slotNumber: currentJoined + 1,
           entryFeePaid: entryFee,
           registeredAt: new Date().toISOString(),
         };
-
-        transaction.set(regRef, newReg);
-      });
+        await setDoc(regRef, newReg);
+      } catch (subErr) {
+        console.warn('Subcollection registration note:', subErr);
+      }
 
       onSuccess();
       onClose();
@@ -164,7 +178,7 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span>Map: <strong className="text-slate-200">{tournament.map}</strong></span>
               <span>Mode: <strong className="text-slate-200">{tournament.mode}</strong></span>
-              <span>Slots: <strong className="text-amber-400 font-mono">{tournament.registeredCount}/{tournament.maxSlots}</strong></span>
+              <span>Slots: <strong className="text-amber-400 font-mono">{currentJoined} / {tournament.maxSlots} Joined</strong></span>
             </div>
           </div>
 
