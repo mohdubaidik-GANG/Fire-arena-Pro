@@ -260,6 +260,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // Cancel and Delete Tournament with Automated Player Refunds
+  const handleCancelAndDeleteTournament = async (t: Tournament) => {
+    const confirmationText =
+      `Are you sure you want to cancel and delete this tournament: "${t.title}"?\n\n` +
+      (t.registeredCount > 0
+        ? `AUTOMATED REFUND NOTICE: ${t.registeredCount} registered player(s) will immediately receive an automated refund of their ₹${t.entryFee} entry fee into their Deposit Wallet!`
+        : `This match room will be permanently removed from the arena.`);
+
+    if (!confirm(confirmationText)) {
+      return;
+    }
+
+    try {
+      // 1. Fetch all registered players for this tournament
+      const regsRef = collection(db, `tournaments/${t.id}/registrations`);
+      const regsSnap = await getDocs(regsRef);
+      const registrations = regsSnap.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      })) as { id: string; userId: string; userIgn?: string; entryFeePaid?: number }[];
+
+      let refundedUsersCount = 0;
+      let totalRefundedAmount = 0;
+
+      // 2. Perform atomic refund and tournament deletion in a Firestore transaction
+      await runTransaction(db, async (transaction) => {
+        // Refund each registered player
+        for (const reg of registrations) {
+          const refundAmount = reg.entryFeePaid || t.entryFee || 0;
+          if (reg.userId && refundAmount > 0) {
+            const userRef = doc(db, 'users', reg.userId);
+            const userSnap = await transaction.get(userRef);
+
+            if (userSnap.exists()) {
+              const currentDeposit = userSnap.data()?.depositBalance || 0;
+              transaction.update(userRef, {
+                depositBalance: currentDeposit + refundAmount,
+                updatedAt: new Date().toISOString(),
+              });
+              refundedUsersCount++;
+              totalRefundedAmount += refundAmount;
+            }
+          }
+
+          // Delete subcollection registration doc
+          const regDocRef = doc(db, `tournaments/${t.id}/registrations`, reg.id);
+          transaction.delete(regDocRef);
+        }
+
+        // Delete the tournament document from Firestore
+        const tourRef = doc(db, 'tournaments', t.id);
+        transaction.delete(tourRef);
+      });
+
+      alert(
+        refundedUsersCount > 0
+          ? `Tournament "${t.title}" cancelled and deleted successfully!\n\nAutomated Refund Summary:\n- Players Refunded: ${refundedUsersCount}\n- Total Refund Credited: ₹${totalRefundedAmount}\n\nThe match has been removed from all player screens in real-time.`
+          : `Tournament "${t.title}" has been deleted and removed from all player screens in real-time.`
+      );
+    } catch (err: unknown) {
+      console.error('Error cancelling and deleting tournament:', err);
+      alert(`Failed to cancel tournament: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   // Save Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -456,17 +521,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         <span className="text-[10px] font-mono text-amber-400 uppercase font-bold">
                           {t.category.replace('_', ' ')} · {t.mode}
                         </span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
-                            t.status === 'live'
-                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                              : t.status === 'completed'
-                              ? 'bg-slate-800 text-slate-400'
-                              : 'bg-emerald-500/20 text-emerald-400'
-                          }`}
-                        >
-                          {t.status}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase font-bold ${
+                              t.status === 'live'
+                                ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                : t.status === 'completed'
+                                ? 'bg-slate-800 text-slate-400'
+                                : 'bg-emerald-500/20 text-emerald-400'
+                            }`}
+                          >
+                            {t.status}
+                          </span>
+                          <button
+                            onClick={() => handleCancelAndDeleteTournament(t)}
+                            className="p-1 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors cursor-pointer"
+                            title="Delete / Cancel Match & Auto Refund"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
 
                       <h3 className="text-base font-bold text-white font-heading">{t.title}</h3>
@@ -506,32 +580,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     </div>
 
                     {/* Admin Actions for Tournament */}
-                    <div className="pt-2 border-t border-slate-800/80 grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => setEditingRoomTour(t)}
-                        className="h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Key className="w-3.5 h-3.5" />
-                        <span>Room ID & Pass</span>
-                      </button>
+                    <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => setEditingRoomTour(t)}
+                          className="h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Key className="w-3.5 h-3.5" />
+                          <span>Room ID & Pass</span>
+                        </button>
 
-                      {t.status !== 'completed' ? (
-                        <button
-                          onClick={() => setDeclaringResultsTour(t)}
-                          className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                        >
-                          <Award className="w-3.5 h-3.5" />
-                          <span>Declare Results</span>
-                        </button>
-                      ) : (
-                        <button
-                          disabled
-                          className="h-9 rounded-xl bg-slate-900 border border-slate-800 text-slate-500 text-xs font-semibold flex items-center justify-center gap-1 cursor-not-allowed"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Prizes Distributed</span>
-                        </button>
-                      )}
+                        {t.status !== 'completed' ? (
+                          <button
+                            onClick={() => setDeclaringResultsTour(t)}
+                            className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Award className="w-3.5 h-3.5" />
+                            <span>Declare Results</span>
+                          </button>
+                        ) : (
+                          <button
+                            disabled
+                            className="h-9 rounded-xl bg-slate-900 border border-slate-800 text-slate-500 text-xs font-semibold flex items-center justify-center gap-1 cursor-not-allowed"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Prizes Distributed</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => handleCancelAndDeleteTournament(t)}
+                        className="w-full h-8 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        title="Cancel match and refund all registered players"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete / Cancel Match ({t.registeredCount || 0} to refund)</span>
+                      </button>
                     </div>
                   </div>
                 ))}

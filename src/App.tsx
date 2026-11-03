@@ -281,8 +281,9 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     setWalletModalOpen(true);
   };
 
-  // Filter tournaments
+  // Filter tournaments (automatically exclude any cancelled matches)
   const filteredTournaments = tournaments.filter((t) => {
+    if (t.status === 'cancelled') return false;
     if (activeTab === 'my_matches') {
       return Boolean(myRegistrations[t.id]);
     }
