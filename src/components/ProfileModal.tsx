@@ -5,9 +5,10 @@ import { useAuth } from '../context/AuthContext';
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenWallet?: () => void;
 }
 
-export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
+export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onOpenWallet }) => {
   const { user, profile, updateProfileDetails } = useAuth();
   const [ign, setIgn] = useState(profile?.ign || '');
   const [ffUid, setFfUid] = useState(profile?.freeFireUid || '');
@@ -75,6 +76,33 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
             <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono">
               Verified
             </span>
+          </div>
+
+          {/* Zest Account Wallet Summary */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-[#121222] border border-amber-500/30 flex items-center justify-between gap-3">
+            <div>
+              <span className="text-[10px] text-amber-400 uppercase font-mono font-bold tracking-wider block">
+                Zest Account Total Balance
+              </span>
+              <div className="text-xl font-black font-mono text-white mt-0.5">
+                ₹{((profile?.depositBalance || 0) + (profile?.winningsBalance || 0)).toLocaleString('en-IN')}
+              </div>
+              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                Deposit: ₹{profile?.depositBalance || 0} · Winnings: ₹{profile?.winningsBalance || 0}
+              </div>
+            </div>
+            {onOpenWallet && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenWallet();
+                }}
+                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs cursor-pointer transition-colors whitespace-nowrap"
+              >
+                Manage Wallet
+              </button>
+            )}
           </div>
 
           {savedSuccess && (

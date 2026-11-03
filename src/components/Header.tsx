@@ -3,7 +3,7 @@ import { Flame, Wallet, PlusCircle, ArrowUpRight, LogOut, ShieldAlert, User, Shi
 import { useAuth } from '../context/AuthContext';
 
 interface HeaderProps {
-  onOpenWallet: (tab?: 'deposit' | 'withdraw') => void;
+  onOpenWallet: (tab?: 'overview' | 'deposit' | 'withdraw' | 'history') => void;
   onOpenProfile: () => void;
   onLogout?: () => void;
   isAdminRoute?: boolean;
@@ -42,9 +42,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenWallet, onOpenProfile, onL
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Dual Wallet Summary Card */}
             <div
-              onClick={() => onOpenWallet('deposit')}
+              onClick={() => onOpenWallet('overview')}
               className="hidden sm:flex items-center gap-3 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-amber-500/40 cursor-pointer transition-all shadow-sm"
-              title="Click to view wallet breakdown or deposit funds"
+              title="Click to view full Zest Account Balance & Career Stats"
             >
               {/* Deposit Cash */}
               <div className="text-left">
@@ -123,7 +123,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenWallet, onOpenProfile, onL
           </div>
 
           <button
-            onClick={() => onOpenWallet('deposit')}
+            onClick={() => onOpenWallet('overview')}
             className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold underline underline-offset-2"
           >
             Manage Wallet →

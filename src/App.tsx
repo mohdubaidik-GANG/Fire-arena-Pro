@@ -15,7 +15,8 @@ import {
   MessageCircle,
   Zap,
   Sword,
-  Target
+  Target,
+  Coins
 } from 'lucide-react';
 import { collection, query, onSnapshot, getDocs, setDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -27,6 +28,7 @@ import { TournamentCard } from './components/TournamentCard';
 import { JoinMatchModal } from './components/JoinMatchModal';
 import { WalletModal } from './components/WalletModal';
 import { ProfileModal } from './components/ProfileModal';
+import { WalletAndCareerStats } from './components/WalletAndCareerStats';
 import { AdminDashboard } from './components/Admin/AdminDashboard';
 import { UnauthorizedScreen } from './components/Admin/UnauthorizedScreen';
 import { Tournament, TournamentRegistration, TournamentCategory } from './types';
@@ -133,11 +135,11 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
   // Navigation Filter & Tabs
   const [activeCategory, setActiveCategory] = useState<'all' | TournamentCategory>('all');
-  const [activeTab, setActiveTab] = useState<'tournaments' | 'my_matches' | 'rules'>('tournaments');
+  const [activeTab, setActiveTab] = useState<'tournaments' | 'my_matches' | 'wallet_stats' | 'rules'>('tournaments');
 
   // Modals State
   const [walletModalOpen, setWalletModalOpen] = useState(false);
-  const [walletInitialTab, setWalletInitialTab] = useState<'deposit' | 'withdraw'>('deposit');
+  const [walletInitialTab, setWalletInitialTab] = useState<'overview' | 'deposit' | 'withdraw' | 'history'>('overview');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [selectedTournamentToJoin, setSelectedTournamentToJoin] = useState<Tournament | null>(null);
 
@@ -276,7 +278,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     }
   };
 
-  const handleOpenWallet = (tab: 'deposit' | 'withdraw' = 'deposit') => {
+  const handleOpenWallet = (tab: 'overview' | 'deposit' | 'withdraw' | 'history' = 'overview') => {
     setWalletInitialTab(tab);
     setWalletModalOpen(true);
   };
@@ -344,10 +346,10 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         {/* Primary Navigation Tabs */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
           {/* Main View Mode Selector */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-900 rounded-xl border border-slate-800 self-start">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-900 rounded-xl border border-slate-800 self-start overflow-x-auto">
             <button
               onClick={() => setActiveTab('tournaments')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'tournaments'
                   ? 'bg-amber-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -359,7 +361,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
             <button
               onClick={() => setActiveTab('my_matches')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'my_matches'
                   ? 'bg-amber-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -375,8 +377,20 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             </button>
 
             <button
+              onClick={() => setActiveTab('wallet_stats')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                activeTab === 'wallet_stats'
+                  ? 'bg-amber-500 text-black shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Coins className="w-3.5 h-3.5" />
+              <span>Wallet & Career Stats</span>
+            </button>
+
+            <button
               onClick={() => setActiveTab('rules')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'rules'
                   ? 'bg-amber-500 text-black shadow-sm'
                   : 'text-slate-400 hover:text-white'
@@ -435,7 +449,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         </div>
 
         {/* ================= TAB 1 & 2: TOURNAMENTS GRID ================= */}
-        {activeTab !== 'rules' && (
+        {(activeTab === 'tournaments' || activeTab === 'my_matches') && (
           <div>
             {fetchingTournaments ? (
               <div className="p-12 text-center text-xs text-slate-400">
@@ -475,6 +489,16 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ================= TAB: WALLET & CAREER STATS ================= */}
+        {activeTab === 'wallet_stats' && (
+          <div className="space-y-6">
+            <WalletAndCareerStats
+              onOpenDeposit={() => handleOpenWallet('deposit')}
+              onOpenWithdraw={() => handleOpenWallet('withdraw')}
+            />
           </div>
         )}
 
@@ -566,6 +590,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       <ProfileModal
         isOpen={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
+        onOpenWallet={() => handleOpenWallet('overview')}
       />
     </div>
   );

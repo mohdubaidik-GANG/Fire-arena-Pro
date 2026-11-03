@@ -15,28 +15,33 @@ import {
   Sparkles,
   Gift,
   Smartphone,
-  ExternalLink
+  ExternalLink,
+  Coins,
+  ChevronLeft,
+  Receipt,
+  Trophy
 } from 'lucide-react';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, addDoc, updateDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { DepositRequest, WithdrawalRequest, AdminSettings } from '../types';
 import { generateUpiUrl } from '../utils/qrCode';
 import { QrCodeCanvas } from './QrCodeCanvas';
+import { WalletAndCareerStats } from './WalletAndCareerStats';
 
 interface WalletModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: 'deposit' | 'withdraw';
+  initialTab?: 'overview' | 'deposit' | 'withdraw' | 'history';
 }
 
 export const WalletModal: React.FC<WalletModalProps> = ({
   isOpen,
   onClose,
-  initialTab = 'deposit',
+  initialTab = 'overview',
 }) => {
   const { user, profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'overview' | 'deposit' | 'withdraw' | 'history'>(initialTab);
 
   // Settings from Admin
   const [adminSettings, setAdminSettings] = useState<AdminSettings>({
@@ -67,22 +72,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [withdrawSuccessMsg, setWithdrawSuccessMsg] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
-  // User History State
-  const [myDeposits, setMyDeposits] = useState<DepositRequest[]>([]);
-  const [myWithdrawals, setMyWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [copiedUpi, setCopiedUpi] = useState<boolean>(false);
-  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
 
   // Sync initial tab when changed
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
 
-  // Fetch admin settings & user history
+  // Fetch admin settings
   useEffect(() => {
     if (!isOpen || !user) return;
 
-    // Listen to admin settings
     const unsubscribeSettings = onSnapshot(
       doc(db, 'settings', 'global'),
       (docSnap) => {
@@ -95,44 +95,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       }
     );
 
-    // Fetch user's deposit requests
-    const qDeposits = query(
-      collection(db, 'depositRequests'),
-      where('userId', '==', user.uid)
-    );
-    const unsubscribeDeposits = onSnapshot(
-      qDeposits,
-      (snapshot) => {
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as DepositRequest));
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setMyDeposits(list);
-      },
-      (error) => {
-        console.error('Error fetching deposits:', error);
-      }
-    );
-
-    // Fetch user's withdrawal requests
-    const qWithdrawals = query(
-      collection(db, 'withdrawalRequests'),
-      where('userId', '==', user.uid)
-    );
-    const unsubscribeWithdrawals = onSnapshot(
-      qWithdrawals,
-      (snapshot) => {
-        const list = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as WithdrawalRequest));
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setMyWithdrawals(list);
-      },
-      (error) => {
-        console.error('Error fetching withdrawals:', error);
-      }
-    );
-
     return () => {
       unsubscribeSettings();
-      unsubscribeDeposits();
-      unsubscribeWithdrawals();
     };
   }, [isOpen, user]);
 
@@ -152,12 +116,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     navigator.clipboard.writeText(adminSettings.upiId);
     setCopiedUpi(true);
     setTimeout(() => setCopiedUpi(false), 2000);
-  };
-
-  const handleCopyRedeemCode = (code: string, id: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCodeId(id);
-    setTimeout(() => setCopiedCodeId(null), 2000);
   };
 
   // Handle Screenshot file upload
@@ -307,17 +265,24 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-xl bg-[#0c0c14] border border-amber-500/20 rounded-2xl shadow-2xl relative my-auto overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <div className="w-full max-w-3xl bg-[#0a0a14] border border-amber-500/30 rounded-2xl shadow-2xl relative my-auto overflow-hidden">
         {/* Top Header Bar */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-[#0f0f1c]">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-[#0f0f1e]">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-              <Wallet className="w-5 h-5" />
+              <Coins className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white font-heading">Dual Cash Wallet</h2>
-              <p className="text-xs text-slate-400">Deposit & Winnings Account</p>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base sm:text-lg font-bold text-white font-heading">
+                  Zest Esports Cash Account
+                </h2>
+                <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-mono font-bold uppercase">
+                  Dual Wallet
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">Deposit, Winnings & Tournament Career Records</p>
             </div>
           </div>
           <button
@@ -328,53 +293,35 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           </button>
         </div>
 
-        {/* Dual Wallet Visual Breakdown Cards */}
-        <div className="grid grid-cols-2 gap-3 p-4 bg-[#090910] border-b border-slate-800/80">
-          {/* Card 1: Deposit Cash */}
-          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Deposit Balance
-              </span>
-              <span className="text-[10px] text-slate-500 font-mono">Entry Fees</span>
-            </div>
-            <div className="text-2xl font-extrabold font-mono text-white tabular-nums">
-              ₹{profile?.depositBalance ?? 0}
-            </div>
-            <p className="text-[10px] text-slate-500 mt-1">Non-withdrawable · Used to join tournaments</p>
-          </div>
+        {/* Modal Top Navigation Tabs */}
+        <div className="flex items-center border-b border-slate-800 bg-[#0d0d1a] overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
+              activeTab === 'overview'
+                ? 'border-amber-500 text-amber-400 bg-amber-500/5'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Coins className="w-4 h-4" />
+            <span>Wallet & Stats</span>
+          </button>
 
-          {/* Card 2: Winnings Cash */}
-          <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/30 flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-400">
-                Winnings Balance
-              </span>
-              <span className="text-[10px] text-emerald-400 font-mono">100% Payout</span>
-            </div>
-            <div className="text-2xl font-extrabold font-mono text-emerald-400 tabular-nums">
-              ₹{profile?.winningsBalance ?? 0}
-            </div>
-            <p className="text-[10px] text-slate-400 mt-1">Earned from Kills & Booyah · 100% Withdrawable</p>
-          </div>
-        </div>
-
-        {/* Action Tabs: Add Cash vs Withdraw */}
-        <div className="flex border-b border-slate-800 bg-[#0d0d18]">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`flex-1 py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 ${
+            className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
               activeTab === 'deposit'
                 ? 'border-amber-500 text-amber-400 bg-amber-500/5'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <ArrowDownCircle className="w-4 h-4" />
-            <span>Add Cash / Deposit</span>
+            <span>Add Cash (UPI QR)</span>
           </button>
+
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`flex-1 py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 ${
+            className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
               activeTab === 'withdraw'
                 ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -385,18 +332,34 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           </button>
         </div>
 
-        {/* Tab Content Area */}
-        <div className="p-4 sm:p-6 max-h-[62vh] overflow-y-auto space-y-6">
-          {activeTab === 'deposit' ? (
+        {/* Modal Scrollable Body */}
+        <div className="p-4 sm:p-6 max-h-[75vh] overflow-y-auto space-y-6">
+          {activeTab === 'overview' && (
+            <WalletAndCareerStats
+              onOpenDeposit={() => setActiveTab('deposit')}
+              onOpenWithdraw={() => setActiveTab('withdraw')}
+            />
+          )}
+
+          {activeTab === 'deposit' && (
             /* =================== DEPOSIT FLOW =================== */
             <div className="space-y-6">
+              <button
+                type="button"
+                onClick={() => setActiveTab('overview')}
+                className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-semibold cursor-pointer mb-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Back to Wallet & Stats Overview</span>
+              </button>
+
               {/* Instructions Banner */}
-              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-start gap-2.5">
+              <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-start gap-2.5">
                 <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <span>
-                  <strong>Step 1:</strong> Select amount & scan Admin UPI QR code or pay to UPI ID.
+                  <strong>Step 1:</strong> Scan the Admin UPI QR Code using Google Pay, PhonePe, Paytm or any UPI app.
                   <br />
-                  <strong>Step 2:</strong> Enter the 12-digit UPI Reference / UTR Number below to claim your deposit.
+                  <strong>Step 2:</strong> Enter the 12-digit UPI Reference / UTR Number from your payment slip below to credit your account.
                 </span>
               </div>
 
@@ -428,7 +391,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                         setDepositAmount(amt);
                         setCustomAmount('');
                       }}
-                      className={`h-10 rounded-xl font-mono font-bold text-xs transition-all cursor-pointer ${
+                      className={`h-11 rounded-xl font-mono font-bold text-xs transition-all cursor-pointer ${
                         depositAmount === amt && !customAmount
                           ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
                           : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
@@ -447,173 +410,133 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       placeholder="Or enter custom amount (e.g. 150)"
                       value={customAmount}
                       onChange={(e) => setCustomAmount(e.target.value)}
-                      className="w-full h-10 pl-7 pr-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
+                      className="w-full h-11 pl-7 pr-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
                     />
                   </div>
-                  {customAmount && (
-                    <span className="text-xs text-amber-400 font-mono font-semibold">
-                      Total: ₹{currentEffectiveDepositAmount}
-                    </span>
-                  )}
                 </div>
               </div>
 
-              {/* Dynamic QR & UPI ID Box */}
-              <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row items-center gap-5">
-                <div className="shrink-0 flex flex-col items-center">
-                  <QrCodeCanvas value={currentUpiUri} size={150} />
-                  <span className="text-[10px] text-slate-400 mt-1 font-mono">Scan via GPay / PhonePe / Paytm</span>
+              {/* Dynamic QR Code & Direct UPI Card */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#141424] to-[#0c0c16] border border-amber-500/30 flex flex-col items-center text-center space-y-4">
+                <div className="flex items-center gap-2 text-xs font-mono text-amber-400">
+                  <QrCode className="w-4 h-4" />
+                  <span>SCAN UPI QR TO PAY ₹{currentEffectiveDepositAmount}</span>
                 </div>
 
-                <div className="flex-1 w-full space-y-3">
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Admin Official UPI ID</span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <code className="px-2.5 py-1.5 rounded-lg bg-black/60 border border-slate-800 text-amber-400 font-mono text-xs select-all break-all">
-                        {adminSettings.upiId}
-                      </code>
-                      <button
-                        type="button"
-                        onClick={handleCopyUpi}
-                        className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs flex items-center gap-1 transition-colors cursor-pointer shrink-0"
-                      >
-                        {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedUpi ? 'Copied' : 'Copy'}</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Payee Name</span>
-                    <p className="text-xs font-semibold text-slate-200">{adminSettings.upiName}</p>
-                  </div>
-
-                  <a
-                    href={currentUpiUri}
-                    className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-medium pt-1"
-                  >
-                    <Smartphone className="w-3.5 h-3.5" />
-                    <span>Pay directly via UPI App (Mobile)</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                <div className="p-3 bg-white rounded-2xl shadow-xl shadow-amber-500/10">
+                  <QrCodeCanvas value={currentUpiUri} size={180} />
                 </div>
+
+                {/* Direct UPI ID with Copy Button */}
+                <div className="w-full max-w-sm space-y-1.5">
+                  <span className="text-[11px] text-slate-400 font-mono">Official Admin UPI ID:</span>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                    <code className="text-xs font-mono font-bold text-white tracking-wide truncate">
+                      {adminSettings.upiId}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={handleCopyUpi}
+                      className="ml-2 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-mono flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedUpi ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedUpi ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mobile Pay Link */}
+                <a
+                  href={currentUpiUri}
+                  className="sm:hidden w-full max-w-sm h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Smartphone className="w-4 h-4 text-amber-400" />
+                  <span>Tap to Pay with Installed UPI App</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
               </div>
 
-              {/* Deposit Verification Form */}
+              {/* Step 2 Form: Enter UTR Number */}
               <form onSubmit={handleDepositSubmit} className="space-y-4 pt-2 border-t border-slate-800">
-                <h3 className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4 text-amber-400" />
-                  Submit Payment Verification
-                </h3>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    12-Digit UPI Ref / UTR Number <span className="text-amber-400">*</span>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                    12-Digit UPI Reference / UTR Number <span className="text-amber-400">*</span>
                   </label>
                   <input
                     type="text"
+                    required
                     value={utrNumber}
                     onChange={(e) => setUtrNumber(e.target.value.replace(/\s+/g, ''))}
-                    placeholder="e.g. 430129482910"
-                    required
-                    minLength={6}
-                    maxLength={30}
-                    className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    placeholder="e.g. 402391823901 (from your payment slip)"
+                    maxLength={16}
+                    className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-amber-500"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">Found in your payment receipt under "UPI Ref ID" or "UTR".</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Every UPI transaction gives a 12-digit UTR/Ref No. Admin matches this to credit your deposit wallet.
+                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Payment Screenshot (Optional, speeds up approval)
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                    Payment Screenshot (Optional but recommended)
                   </label>
                   <input
                     type="file"
                     accept="image/*"
                     onChange={handleScreenshotChange}
-                    className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                    className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-amber-400 hover:file:bg-slate-700 cursor-pointer"
                   />
                   {screenshotData && (
-                    <p className="text-[11px] text-emerald-400 mt-1 flex items-center gap-1">
-                      <Check className="w-3 h-3" /> Screenshot attached
-                    </p>
+                    <div className="mt-2 text-xs text-emerald-400 flex items-center gap-1.5 font-mono">
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Receipt screenshot attached</span>
+                    </div>
                   )}
                 </div>
 
                 <button
                   type="submit"
-                  disabled={depositSubmitting}
+                  disabled={depositSubmitting || currentEffectiveDepositAmount <= 0 || !utrNumber}
                   className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <ArrowDownCircle className="w-4 h-4" />
-                  <span>{depositSubmitting ? 'Submitting Verification...' : `Submit Deposit Proof (₹${currentEffectiveDepositAmount})`}</span>
+                  <ArrowDownCircle className="w-4 h-4 stroke-[2.5]" />
+                  <span>
+                    {depositSubmitting
+                      ? 'Submitting Proof...'
+                      : `Submit Deposit Request for ₹${currentEffectiveDepositAmount}`}
+                  </span>
                 </button>
               </form>
-
-              {/* Deposit History */}
-              {myDeposits.length > 0 && (
-                <div className="pt-4 border-t border-slate-800">
-                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    Recent Deposit Requests
-                  </h4>
-                  <div className="space-y-2">
-                    {myDeposits.slice(0, 4).map((dep) => (
-                      <div
-                        key={dep.id}
-                        className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800 flex items-center justify-between text-xs"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold font-mono text-white">₹{dep.amount}</span>
-                            <span className="text-[10px] text-slate-500 font-mono">UTR: {dep.utrNumber}</span>
-                          </div>
-                          <span className="text-[10px] text-slate-500">
-                            {new Date(dep.createdAt).toLocaleDateString()} at {new Date(dep.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-
-                        <div>
-                          {dep.status === 'pending' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[10px]">
-                              <Clock className="w-3 h-3" /> Pending Admin
-                            </span>
-                          )}
-                          {dep.status === 'approved' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono text-[10px]">
-                              <CheckCircle2 className="w-3 h-3" /> Approved (+₹{dep.amount})
-                            </span>
-                          )}
-                          {dep.status === 'rejected' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-mono text-[10px]">
-                              <XCircle className="w-3 h-3" /> Rejected
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
-          ) : (
+          )}
+
+          {activeTab === 'withdraw' && (
             /* =================== WITHDRAWAL FLOW =================== */
             <div className="space-y-6">
+              <button
+                type="button"
+                onClick={() => setActiveTab('overview')}
+                className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer mb-1"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Back to Wallet & Stats Overview</span>
+              </button>
+
               {/* Instructions */}
-              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-xs text-emerald-300 flex items-start gap-2.5">
+              <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-start gap-2.5">
                 <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>
-                  Withdraw your hard-earned tournament prize money.
-                  <br />
-                  <strong>Option A:</strong> Direct instant UPI transfer to your VPA.
-                  <br />
-                  <strong>Option B:</strong> Google Play Redeem Code delivered instantly to your profile and email.
-                </span>
+                <div>
+                  <strong>Withdrawable Balance: ₹{profile?.winningsBalance ?? 0}</strong>
+                  <p className="text-slate-400 mt-0.5">
+                    Only Winnings Cash can be withdrawn. Minimum withdrawal is ₹{adminSettings.minWithdrawal || 50}. Payouts processed directly to your UPI ID or delivered as an official Google Play Redeem Code voucher!
+                  </p>
+                </div>
               </div>
 
               {withdrawSuccessMsg && (
-                <div className="p-3.5 bg-emerald-500/20 border border-emerald-500/50 rounded-xl text-xs text-emerald-200 flex items-center gap-2.5 shadow-lg shadow-emerald-950/40">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                  <span className="font-semibold text-sm">{withdrawSuccessMsg}</span>
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{withdrawSuccessMsg}</span>
                 </div>
               )}
 
@@ -624,78 +547,66 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </div>
               )}
 
-              {/* Available Winnings Indicator */}
-              <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-slate-400">Withdrawable Balance</span>
-                  <div className="text-xl font-bold font-mono text-emerald-400">
-                    ₹{profile?.winningsBalance ?? 0}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[11px] text-slate-500 block">Min Withdrawal</span>
-                  <span className="text-xs font-mono font-semibold text-slate-300">
-                    ₹{adminSettings.minWithdrawal || 50}
-                  </span>
-                </div>
-              </div>
-
               <form onSubmit={handleWithdrawalSubmit} className="space-y-5">
-                {/* Withdrawal Method Selection */}
+                {/* Method Selector */}
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                    Choose Payout Method
+                    Select Payout Method
                   </label>
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
                       onClick={() => setWithdrawMethod('upi')}
-                      className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all cursor-pointer ${
+                      className={`p-3.5 rounded-xl border flex items-center gap-3 transition-all cursor-pointer text-left ${
                         withdrawMethod === 'upi'
-                          ? 'bg-emerald-500/10 border-emerald-500/50 text-white'
+                          ? 'bg-emerald-500/10 border-emerald-500 text-white'
                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
-                      <Smartphone className={`w-5 h-5 mt-0.5 ${withdrawMethod === 'upi' ? 'text-emerald-400' : 'text-slate-500'}`} />
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                        <Smartphone className="w-4 h-4" />
+                      </div>
                       <div>
-                        <div className="text-xs font-bold text-white">Direct UPI Transfer</div>
-                        <div className="text-[10px] text-slate-400">Bank account via VPA</div>
+                        <div className="text-xs font-bold">Direct UPI Transfer</div>
+                        <div className="text-[10px] text-slate-400">GPay, PhonePe, Paytm VPA</div>
                       </div>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setWithdrawMethod('redeem_code')}
-                      className={`p-3 rounded-xl border text-left flex items-start gap-3 transition-all cursor-pointer ${
+                      className={`p-3.5 rounded-xl border flex items-center gap-3 transition-all cursor-pointer text-left ${
                         withdrawMethod === 'redeem_code'
-                          ? 'bg-emerald-500/10 border-emerald-500/50 text-white'
+                          ? 'bg-amber-500/10 border-amber-500 text-white'
                           : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
                       }`}
                     >
-                      <Gift className={`w-5 h-5 mt-0.5 ${withdrawMethod === 'redeem_code' ? 'text-emerald-400' : 'text-slate-500'}`} />
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                        <Gift className="w-4 h-4" />
+                      </div>
                       <div>
-                        <div className="text-xs font-bold text-white">Play Redeem Code</div>
-                        <div className="text-[10px] text-slate-400">Google Play Diamonds</div>
+                        <div className="text-xs font-bold">Google Play Code</div>
+                        <div className="text-[10px] text-slate-400">Instant Redeem Voucher</div>
                       </div>
                     </button>
                   </div>
                 </div>
 
-                {/* Amount to Withdraw */}
+                {/* Amount */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Withdrawal Amount (₹) <span className="text-emerald-400">*</span>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
+                    Withdrawal Amount (₹)
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm">₹</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm">₹</span>
                     <input
                       type="number"
-                      value={withdrawAmount}
-                      onChange={(e) => setWithdrawAmount(Math.max(0, parseInt(e.target.value) || 0))}
+                      required
                       min={adminSettings.minWithdrawal || 50}
                       max={profile?.winningsBalance || 0}
-                      required
-                      className="w-full h-11 pl-7 pr-20 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:border-emerald-500"
+                      value={withdrawAmount}
+                      onChange={(e) => setWithdrawAmount(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-full h-11 pl-8 pr-16 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:border-emerald-500"
                     />
                     <button
                       type="button"
@@ -748,81 +659,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </span>
                 </button>
               </form>
-
-              {/* Withdrawal History & Redeem Codes */}
-              {myWithdrawals.length > 0 && (
-                <div className="pt-4 border-t border-slate-800">
-                  <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                    Recent Withdrawals & Redeem Codes
-                  </h4>
-                  <div className="space-y-2.5">
-                    {myWithdrawals.map((w) => (
-                      <div
-                        key={w.id}
-                        className="p-3 rounded-xl bg-slate-900/70 border border-slate-800 text-xs space-y-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold font-mono text-emerald-400 text-sm">₹{w.amount}</span>
-                            <span className="text-[11px] text-slate-400 uppercase font-mono">
-                              via {w.method === 'upi' ? 'UPI' : 'Play Code'}
-                            </span>
-                          </div>
-
-                          <div>
-                            {w.status === 'pending' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-mono text-[10px]">
-                                <Clock className="w-3 h-3" /> Processing Payout
-                              </span>
-                            )}
-                            {w.status === 'approved' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono text-[10px]">
-                                <CheckCircle2 className="w-3 h-3" /> Paid & Completed
-                              </span>
-                            )}
-                            {w.status === 'rejected' && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-mono text-[10px]">
-                                <XCircle className="w-3 h-3" /> Rejected
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* If Google Play Redeem Code was issued */}
-                        {w.redeemCode && (
-                          <div className="p-2.5 bg-black/60 border border-amber-500/40 rounded-lg flex items-center justify-between gap-2">
-                            <div>
-                              <span className="text-[10px] text-amber-400 font-semibold block uppercase">Google Play Redeem Code</span>
-                              <code className="text-sm font-mono font-bold text-white select-all">
-                                {w.redeemCode}
-                              </code>
-                            </div>
-                            <button
-                              onClick={() => handleCopyRedeemCode(w.redeemCode!, w.id)}
-                              className="px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                            >
-                              {copiedCodeId === w.id ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                              <span>{copiedCodeId === w.id ? 'Copied' : 'Copy'}</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {/* If UPI payout UTR exists */}
-                        {w.payoutUtr && (
-                          <div className="text-[11px] text-slate-400 font-mono">
-                            Bank Payout UTR: <span className="text-white font-semibold">{w.payoutUtr}</span>
-                          </div>
-                        )}
-
-                        <div className="text-[10px] text-slate-500 flex items-center justify-between">
-                          <span>Requested on {new Date(w.createdAt).toLocaleDateString()}</span>
-                          {w.adminNote && <span className="text-amber-400/80">Note: {w.adminNote}</span>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>

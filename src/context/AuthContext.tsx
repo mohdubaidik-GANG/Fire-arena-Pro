@@ -1,7 +1,17 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db, googleProvider, signInWithPopup, signOut, handleFirestoreError, OperationType } from '../firebase';
+import {
+  auth,
+  db,
+  googleProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signOut,
+  handleFirestoreError,
+  OperationType,
+} from '../firebase';
 import { UserProfile, SUPER_ADMIN_EMAILS } from '../types';
 
 interface AuthContextType {
@@ -26,9 +36,66 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [needsProfileSetup, setNeedsProfileSetup] = useState<boolean>(false);
 
+  // Helper to check and initialize user profile in Firestore if new user
+  const checkAndInitializeUserProfile = async (currentUser: User) => {
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const userSnap = await getDoc(userRef);
+
+      const isWhitelisted = SUPER_ADMIN_EMAILS.some(
+        (email) => email.toLowerCase() === currentUser.email?.toLowerCase()
+      );
+
+      if (!userSnap.exists()) {
+        const newProfile: UserProfile = {
+          uid: currentUser.uid,
+          email: currentUser.email || '',
+          ign: currentUser.displayName ? currentUser.displayName.slice(0, 25) : '',
+          freeFireUid: '',
+          depositBalance: 0,
+          winningsBalance: 0,
+          isBanned: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        await setDoc(userRef, newProfile);
+        setProfile(newProfile);
+
+        if (!isWhitelisted && (!newProfile.ign || !newProfile.freeFireUid)) {
+          setNeedsProfileSetup(true);
+        } else {
+          setNeedsProfileSetup(false);
+        }
+      } else {
+        const data = userSnap.data() as UserProfile;
+        setProfile(data);
+        if (!isWhitelisted && (!data.ign || !data.freeFireUid)) {
+          setNeedsProfileSetup(true);
+        } else {
+          setNeedsProfileSetup(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error verifying/initializing user profile:', error);
+    }
+  };
+
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
 
+    // Handle mobile redirect sign-in resolution if returning from redirect
+    getRedirectResult(auth)
+      .then(async (credential) => {
+        if (credential?.user) {
+          await checkAndInitializeUserProfile(credential.user);
+        }
+      })
+      .catch((err) => {
+        console.warn('Google redirect result resolution check:', err);
+      });
+
+    // Listen to Firebase Auth state
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
 
@@ -43,7 +110,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const userRef = doc(db, 'users', currentUser.uid);
 
         try {
-          // Check if admin document also exists in /admins
+          // Check if admin document also exists in /admins collection
           if (!isWhitelisted) {
             try {
               const adminDoc = await getDoc(doc(db, 'admins', currentUser.uid));
@@ -58,7 +125,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           // Realtime listener for User Profile
           unsubscribeProfile = onSnapshot(
             userRef,
-            (docSnap) => {
+            async (docSnap) => {
               if (docSnap.exists()) {
                 const data = docSnap.data() as UserProfile;
                 setProfile(data);
@@ -69,13 +136,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                   setNeedsProfileSetup(false);
                 }
               } else {
-                // New user - profile not created in Firestore yet
-                setProfile(null);
-                if (!isWhitelisted) {
-                  setNeedsProfileSetup(true);
-                } else {
-                  setNeedsProfileSetup(false);
-                }
+                // New user - profile not created yet in Firestore: create default record
+                await checkAndInitializeUserProfile(currentUser);
               }
               setLoading(false);
             },
@@ -111,7 +173,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const loginWithGoogle = async () => {
     setLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      // Force direct Google Account Picker with select_account
+      googleProvider.setCustomParameters({
+        prompt: 'select_account',
+      });
+
+      try {
+        const credential = await signInWithPopup(auth, googleProvider);
+        if (credential.user) {
+          await checkAndInitializeUserProfile(credential.user);
+        }
+      } catch (popupError: unknown) {
+        const errorCode = (popupError as { code?: string })?.code;
+        // On mobile or popup-blocked browsers, fallback to signInWithRedirect
+        if (
+          errorCode === 'auth/popup-blocked' ||
+          errorCode === 'auth/operation-not-supported-in-this-environment'
+        ) {
+          console.warn('Popup blocked/unsupported, falling back to signInWithRedirect:', popupError);
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        }
+        throw popupError;
+      }
     } catch (error) {
       console.error('Google Sign-In failed:', error);
       setLoading(false);
@@ -140,21 +224,32 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       throw new Error('Please enter valid Free Fire IGN and UID');
     }
 
-    const newProfile: UserProfile = {
-      uid: user.uid,
-      email: user.email || '',
-      ign: cleanIgn,
-      freeFireUid: cleanUid,
-      depositBalance: 0,
-      winningsBalance: 0,
-      isBanned: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
     try {
-      await setDoc(doc(db, 'users', user.uid), newProfile);
-      setProfile(newProfile);
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        await updateDoc(userRef, {
+          ign: cleanIgn,
+          freeFireUid: cleanUid,
+          updatedAt: new Date().toISOString(),
+        });
+        setProfile((prev) => (prev ? { ...prev, ign: cleanIgn, freeFireUid: cleanUid } : null));
+      } else {
+        const newProfile: UserProfile = {
+          uid: user.uid,
+          email: user.email || '',
+          ign: cleanIgn,
+          freeFireUid: cleanUid,
+          depositBalance: 0,
+          winningsBalance: 0,
+          isBanned: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await setDoc(userRef, newProfile);
+        setProfile(newProfile);
+      }
       setNeedsProfileSetup(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `users/${user.uid}`);
@@ -177,6 +272,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         freeFireUid: cleanUid,
         updatedAt: new Date().toISOString(),
       });
+      setProfile((prev) => (prev ? { ...prev, ign: cleanIgn, freeFireUid: cleanUid } : null));
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
     }
