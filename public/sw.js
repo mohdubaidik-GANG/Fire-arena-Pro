@@ -5,7 +5,9 @@ const CACHE_NAME = 'firearena-v1.0.0';
 const PRECACHE_ASSETS = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
 // Install Event: Precaches base shell and activates immediately
