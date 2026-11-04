@@ -5,6 +5,10 @@ export interface UserProfile {
   freeFireUid: string; // Free Fire numeric UID
   phone?: string;
   password?: string;
+  role?: string;
+  totalKills?: number;
+  matchesPlayed?: number;
+  tournamentsWon?: number;
   depositBalance: number;
   winningsBalance: number;
   isBanned: boolean;

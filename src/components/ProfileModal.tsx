@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
-import { X, User, Crosshair, Shield, Check, AlertCircle, Save } from 'lucide-react';
+import { X, User, Crosshair, Shield, Check, AlertCircle, Save, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface ProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenWallet?: () => void;
+  onLogout?: () => void;
 }
 
-export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onOpenWallet }) => {
-  const { user, profile, updateProfileDetails } = useAuth();
+export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onOpenWallet, onLogout }) => {
+  const { user, profile, updateProfileDetails, logout } = useAuth();
   const [ign, setIgn] = useState(profile?.ign || '');
   const [ffUid, setFfUid] = useState(profile?.freeFireUid || '');
   const [isSaving, setIsSaving] = useState(false);
@@ -68,14 +69,41 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
         </div>
 
         <div className="p-5 space-y-5">
-          <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Google Account</span>
-              <span className="text-xs font-mono text-white font-semibold">{user?.email}</span>
+          {/* Gamer Identity Card */}
+          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+            <div className="space-y-0.5">
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Free Fire UID</span>
+              <div className="text-sm font-mono text-[#00f2fe] font-bold tracking-wider">
+                {profile.freeFireUid || user?.uid || 'Not Set'}
+              </div>
+              <div className="text-xs text-white font-semibold">
+                IGN: <span className="text-amber-400">{profile.ign || 'Gamer'}</span>
+              </div>
             </div>
-            <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-mono">
-              Verified
-            </span>
+            <div className="flex flex-col items-end gap-1">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold">
+                ● Active Pro
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {profile.role === 'admin' ? 'Super Admin' : 'Verified Gamer'}
+              </span>
+            </div>
+          </div>
+
+          {/* Quick Career Stats Grid */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center">
+              <span className="text-[9px] text-slate-400 uppercase font-mono block">Total Kills</span>
+              <span className="text-base font-bold font-mono text-[#00f2fe]">{profile.totalKills || 0}</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center">
+              <span className="text-[9px] text-slate-400 uppercase font-mono block">Matches</span>
+              <span className="text-base font-bold font-mono text-amber-400">{profile.matchesPlayed || 0}</span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center">
+              <span className="text-[9px] text-slate-400 uppercase font-mono block">Booyah</span>
+              <span className="text-base font-bold font-mono text-emerald-400">{profile.tournamentsWon || 0}</span>
+            </div>
           </div>
 
           {/* Zest Account Wallet Summary */}
@@ -157,6 +185,25 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
               <span>{isSaving ? 'Saving Changes...' : 'Update In-Game Details'}</span>
             </button>
           </form>
+
+          {/* Logout Action */}
+          <div className="pt-2 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={async () => {
+                onClose();
+                if (onLogout) {
+                  onLogout();
+                } else {
+                  await logout();
+                }
+              }}
+              className="w-full h-10 rounded-xl bg-red-950/30 hover:bg-red-900/40 border border-red-500/30 text-red-400 hover:text-red-300 font-semibold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Log Out from FireArena</span>
+            </button>
+          </div>
 
           {profile.isBanned && (
             <div className="p-3 bg-red-950/40 border border-red-500/40 rounded-xl text-xs text-red-300">

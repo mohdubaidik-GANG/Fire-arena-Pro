@@ -14,10 +14,14 @@ import {
   ExternalLink,
   MessageCircle,
   Zap,
-  Sword,
   Target,
   Coins,
-  User
+  User,
+  Gamepad2,
+  CreditCard,
+  LogOut,
+  Settings,
+  Edit3
 } from 'lucide-react';
 import { collection, query, onSnapshot, getDocs, setDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -137,7 +141,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
   // Navigation Filter & Tabs
   const [activeCategory, setActiveCategory] = useState<'all' | TournamentCategory>('all');
-  const [activeTab, setActiveTab] = useState<'tournaments' | 'my_matches' | 'wallet_stats' | 'rules'>('tournaments');
+  const [activeTab, setActiveTab] = useState<'tournaments' | 'my_matches' | 'wallet_stats' | 'rules' | 'profile'>('tournaments');
 
   // Modals State
   const [walletModalOpen, setWalletModalOpen] = useState(false);
@@ -402,7 +406,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       />
 
       {/* Main Container */}
-      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 pb-24 sm:pb-12 flex-1 space-y-6">
+      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 pb-32 sm:pb-12 flex-1 space-y-6">
         {/* Hero Banner / Quick Announcements */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/10 via-[#131322] to-orange-500/10 border border-amber-500/30 p-5 sm:p-6 shadow-xl">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -495,6 +499,18 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             >
               <HelpCircle className="w-3.5 h-3.5" />
               <span>Rules & Help</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                activeTab === 'profile'
+                  ? 'bg-amber-500 text-black shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <User className="w-3.5 h-3.5" />
+              <span>Gamer Profile</span>
             </button>
           </div>
 
@@ -662,6 +678,150 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             </div>
           </div>
         )}
+
+        {/* ================= TAB 4: GAMER PROFILE & SETTINGS ================= */}
+        {activeTab === 'profile' && (
+          <div className="max-w-2xl mx-auto space-y-5 animate-in fade-in duration-200">
+            {/* Header Profile Identity Card */}
+            <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-[#0c101d] via-[#121626] to-[#0c101d] border border-[#1e293b] shadow-[0_8px_30px_rgba(0,0,0,0.5),0_0_20px_rgba(0,242,254,0.08)] relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-[#00f2fe]/5 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 via-orange-500 to-[#00f2fe] p-[2px] shadow-[0_0_15px_rgba(0,242,254,0.3)]">
+                      <div className="w-full h-full rounded-[14px] bg-[#0c101d] flex items-center justify-center text-white">
+                        <User className="w-8 h-8 text-[#00f2fe]" />
+                      </div>
+                    </div>
+                    <span className="absolute -bottom-1 -right-1 px-1.5 py-0.2 rounded-full bg-emerald-500 text-black text-[9px] font-mono font-black border-2 border-[#0c101d]">
+                      PRO
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-bold text-white font-heading tracking-wide">
+                        {profile?.ign || user?.displayName || 'Gamer'}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full bg-[#00f2fe]/10 text-[#00f2fe] border border-[#00f2fe]/30 text-[10px] font-mono font-bold">
+                        {profile?.role === 'admin' ? 'Super Admin' : 'Verified Pro'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+                      <span>UID:</span>
+                      <span className="text-[#00f2fe] font-bold tracking-wider">{profile?.freeFireUid || user?.uid || 'Not Set'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setProfileModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-[#00f2fe]" />
+                    <span>Edit UID / IGN</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Battle Combat Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-4 rounded-xl bg-[#0c101d] border border-[#1e293b] text-center space-y-1 shadow-sm">
+                <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider block">Total Kills</span>
+                <span className="text-2xl font-black font-mono text-[#00f2fe]">{profile?.totalKills || 0}</span>
+                <span className="text-[10px] text-slate-400 block font-mono">Esports Combat</span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#0c101d] border border-[#1e293b] text-center space-y-1 shadow-sm">
+                <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider block">Matches Played</span>
+                <span className="text-2xl font-black font-mono text-amber-400">{profile?.matchesPlayed || 0}</span>
+                <span className="text-[10px] text-slate-400 block font-mono">Custom Rooms</span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#0c101d] border border-[#1e293b] text-center space-y-1 shadow-sm">
+                <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider block">Booyah Won</span>
+                <span className="text-2xl font-black font-mono text-emerald-400">{profile?.tournamentsWon || 0}</span>
+                <span className="text-[10px] text-slate-400 block font-mono">Rank 1 Finishes</span>
+              </div>
+
+              <div className="p-4 rounded-xl bg-[#0c101d] border border-[#1e293b] text-center space-y-1 shadow-sm">
+                <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider block">Total Balance</span>
+                <span className="text-2xl font-black font-mono text-white">
+                  ₹{((profile?.depositBalance || 0) + (profile?.winningsBalance || 0)).toLocaleString('en-IN')}
+                </span>
+                <span className="text-[10px] text-amber-400 block font-mono">Deposit + Winnings</span>
+              </div>
+            </div>
+
+            {/* Quick Wallet & Payout Cards */}
+            <div className="p-4 rounded-xl bg-[#0c101d] border border-[#1e293b] flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="space-y-0.5 text-center sm:text-left">
+                <span className="text-xs font-bold text-white font-heading">Wallet & Cash Balance</span>
+                <div className="text-xs text-slate-400 font-mono">
+                  Deposit: ₹{profile?.depositBalance || 0} · Withdrawable Winnings: <span className="text-emerald-400 font-bold">₹{profile?.winningsBalance || 0}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleOpenWallet('deposit')}
+                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Deposit UPI
+                </button>
+                <button
+                  onClick={() => handleOpenWallet('withdraw')}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Withdraw Cash
+                </button>
+              </div>
+            </div>
+
+            {/* Settings & Logout Actions */}
+            <div className="p-4 rounded-xl bg-[#0c101d] border border-[#1e293b] space-y-3">
+              <span className="text-xs font-bold text-slate-300 font-heading block">Account Options</span>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => setActiveTab('rules')}
+                  className="w-full p-3 rounded-xl bg-slate-900/70 hover:bg-slate-800 border border-slate-800 text-left flex items-center justify-between text-xs text-slate-300 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Shield className="w-4 h-4 text-amber-400" />
+                    <span>Tournament Fair Play & Rules</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500" />
+                </button>
+
+                <button
+                  onClick={() => setActiveTab('wallet_stats')}
+                  className="w-full p-3 rounded-xl bg-slate-900/70 hover:bg-slate-800 border border-slate-800 text-left flex items-center justify-between text-xs text-slate-300 transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <CreditCard className="w-4 h-4 text-[#00f2fe]" />
+                    <span>Detailed Transaction History</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500" />
+                </button>
+
+                <button
+                  onClick={onLogout}
+                  className="w-full p-3 rounded-xl bg-red-950/25 hover:bg-red-950/50 border border-red-500/30 text-left flex items-center justify-between text-xs text-red-400 hover:text-red-300 font-semibold transition-colors cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <LogOut className="w-4 h-4 text-red-400" />
+                    <span>Log Out from Device</span>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-red-500/60" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Join Match Modal */}
@@ -689,6 +849,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         isOpen={profileModalOpen}
         onClose={() => setProfileModalOpen(false)}
         onOpenWallet={() => handleOpenWallet('overview')}
+        onLogout={onLogout}
       />
 
       {/* Match Rules & Description Modal */}
@@ -699,63 +860,67 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         onJoinClick={(tour) => setSelectedTournamentToJoin(tour)}
       />
 
-      {/* ================= MOBILE BOTTOM NAVIGATION BAR (APK Optimized) ================= */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#080810]/95 backdrop-blur-xl border-t border-slate-800/90 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+      {/* ================= MOBILE BOTTOM NAVIGATION BAR (Exact Gaming Floating Pill) ================= */}
+      <nav className="sm:hidden fixed bottom-3 left-1/2 -translate-x-1/2 w-[calc(100%-24px)] max-w-[480px] z-50 bg-[#0c101d]/95 backdrop-blur-xl border border-[#1e293b] rounded-[20px] px-2 py-2 flex items-center justify-around shadow-[0_8px_30px_rgba(0,0,0,0.8),0_0_24px_rgba(0,242,254,0.18)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        {/* 1. ARENA */}
         <button
           onClick={() => setActiveTab('tournaments')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all cursor-pointer ${
-            activeTab === 'tournaments'
-              ? 'text-amber-400 font-bold'
-              : 'text-slate-400 hover:text-slate-200'
+          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
+            activeTab === 'tournaments' ? 'text-[#00f2fe]' : 'text-[#8b949e] hover:text-slate-200'
           }`}
         >
-          <Trophy className={`w-4 h-4 ${activeTab === 'tournaments' ? 'stroke-[2.5] text-amber-400' : ''}`} />
-          <span className="text-[10px]">Arena</span>
+          {activeTab === 'tournaments' && (
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-[#00f2fe] shadow-[0_0_10px_#00f2fe]" />
+          )}
+          <Gamepad2 className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'tournaments' ? 'stroke-[2.5] text-[#00f2fe] scale-110 drop-shadow-[0_0_8px_rgba(0,242,254,0.6)]' : 'opacity-70'}`} />
+          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">ARENA</span>
         </button>
 
+        {/* 2. MY MATCHES */}
         <button
           onClick={() => setActiveTab('my_matches')}
-          className={`relative flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all cursor-pointer ${
-            activeTab === 'my_matches'
-              ? 'text-amber-400 font-bold'
-              : 'text-slate-400 hover:text-slate-200'
+          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
+            activeTab === 'my_matches' ? 'text-[#00f2fe]' : 'text-[#8b949e] hover:text-slate-200'
           }`}
         >
-          <Crosshair className={`w-4 h-4 ${activeTab === 'my_matches' ? 'stroke-[2.5] text-amber-400' : ''}`} />
-          <span className="text-[10px]">My Matches</span>
+          {activeTab === 'my_matches' && (
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-[#00f2fe] shadow-[0_0_10px_#00f2fe]" />
+          )}
+          <Target className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'my_matches' ? 'stroke-[2.5] text-[#00f2fe] scale-110 drop-shadow-[0_0_8px_rgba(0,242,254,0.6)]' : 'opacity-70'}`} />
+          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">MY MATCHES</span>
           {myRegisteredCount > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-black text-[9px] font-mono font-bold flex items-center justify-center">
+            <span className="absolute -top-1 -right-0.5 w-4 h-4 rounded-full bg-[#00f2fe] text-black text-[9px] font-mono font-bold flex items-center justify-center shadow-[0_0_8px_#00f2fe]">
               {myRegisteredCount}
             </span>
           )}
         </button>
 
+        {/* 3. WALLET */}
         <button
-          onClick={() => handleOpenWallet('overview')}
-          className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-slate-400 hover:text-emerald-400 transition-all cursor-pointer"
-        >
-          <Wallet className="w-4 h-4 text-emerald-400" />
-          <span className="text-[10px] text-emerald-400 font-semibold">Wallet</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('rules')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all cursor-pointer ${
-            activeTab === 'rules'
-              ? 'text-amber-400 font-bold'
-              : 'text-slate-400 hover:text-slate-200'
+          onClick={() => setActiveTab('wallet_stats')}
+          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
+            activeTab === 'wallet_stats' ? 'text-[#00f2fe]' : 'text-[#8b949e] hover:text-slate-200'
           }`}
         >
-          <Shield className={`w-4 h-4 ${activeTab === 'rules' ? 'stroke-[2.5] text-amber-400' : ''}`} />
-          <span className="text-[10px]">Rules</span>
+          {activeTab === 'wallet_stats' && (
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-[#00f2fe] shadow-[0_0_10px_#00f2fe]" />
+          )}
+          <CreditCard className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'wallet_stats' ? 'stroke-[2.5] text-[#00f2fe] scale-110 drop-shadow-[0_0_8px_rgba(0,242,254,0.6)]' : 'text-amber-400 opacity-80'}`} />
+          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">WALLET</span>
         </button>
 
+        {/* 4. PROFILE */}
         <button
-          onClick={() => setProfileModalOpen(true)}
-          className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all cursor-pointer"
+          onClick={() => setActiveTab('profile')}
+          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
+            activeTab === 'profile' ? 'text-[#00f2fe]' : 'text-[#8b949e] hover:text-slate-200'
+          }`}
         >
-          <User className="w-4 h-4 text-amber-400" />
-          <span className="text-[10px]">Profile</span>
+          {activeTab === 'profile' && (
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-[#00f2fe] shadow-[0_0_10px_#00f2fe]" />
+          )}
+          <User className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'profile' ? 'stroke-[2.5] text-[#00f2fe] scale-110 drop-shadow-[0_0_8px_rgba(0,242,254,0.6)]' : 'opacity-70'}`} />
+          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">PROFILE</span>
         </button>
       </nav>
     </div>
