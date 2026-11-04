@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserProfile } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export const AuthGate: React.FC = () => {
   const {
@@ -156,12 +157,13 @@ export const AuthGate: React.FC = () => {
         <div className="absolute -inset-1 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 rounded-3xl blur-xl opacity-70 pointer-events-none" />
 
         <div className="relative bg-[#0d0d16] border border-amber-500/20 rounded-2xl p-6 sm:p-7 shadow-2xl">
-          {/* Top Right Help Guide Button */}
-          <div className="flex justify-end mb-2">
+          {/* Top Bar: PWA Install & Help Guide Buttons */}
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <PWAInstallButton />
             <button
               type="button"
               onClick={() => setGuideModalOpen(true)}
-              className="h-7 px-2.5 rounded-full bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 text-[11px] font-semibold flex items-center gap-1.5 shadow-sm shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
+              className="h-7 px-2.5 rounded-full bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 text-[11px] font-semibold flex items-center gap-1.5 shadow-sm shadow-amber-500/20 active:scale-95 transition-all cursor-pointer ml-auto"
             >
               <BookOpen className="w-3.5 h-3.5 text-amber-400" />
               <span>Login Kaise Karein? (Guide)</span>

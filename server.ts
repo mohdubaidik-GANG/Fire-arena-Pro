@@ -101,6 +101,23 @@ app.post('/api/send-redeem-code', async (req, res) => {
 });
 
 async function startServer() {
+  const publicPath = path.resolve(process.cwd(), 'public');
+  
+  // Explicit PWA routes with exact headers for PWABuilder & browsers
+  app.get('/sw.js', (_req, res) => {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(publicPath, 'sw.js'));
+  });
+
+  app.get('/manifest.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.sendFile(path.join(publicPath, 'manifest.json'));
+  });
+
+  app.use(express.static(publicPath));
+
   if (!isProd) {
     const vite = await createViteServer({
       server: { middlewareMode: true },

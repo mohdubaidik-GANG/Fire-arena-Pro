@@ -1,6 +1,7 @@
 import React from 'react';
 import { Flame, Wallet, PlusCircle, ArrowUpRight, LogOut, ShieldAlert, User, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   onOpenWallet: (tab?: 'overview' | 'deposit' | 'withdraw' | 'history') => void;
@@ -87,6 +88,9 @@ export const Header: React.FC<HeaderProps> = ({ onOpenWallet, onOpenProfile, onL
 
         {/* Right Nav Links & Actions */}
         <div className="flex items-center gap-2">
+          {/* In-App PWA Install Prompt Button */}
+          <PWAInstallButton />
+
           {profile && (
             <button
               onClick={onOpenProfile}
