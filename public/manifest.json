@@ -4,7 +4,6 @@
   "description": "Free Fire Esports Tournament Platform",
   "start_url": "/",
   "scope": "/",
-  "id": "/",
   "display": "standalone",
   "background_color": "#0b0e14",
   "theme_color": "#f59e0b",
@@ -14,13 +13,25 @@
       "src": "https://cdn-icons-png.flaticon.com/512/808/808665.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/808/808665.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
     },
     {
       "src": "https://cdn-icons-png.flaticon.com/512/808/808665.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/808/808665.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
