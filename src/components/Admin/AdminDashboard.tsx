@@ -8,6 +8,7 @@ import {
   PlusCircle,
   CheckCircle2,
   XCircle,
+  X,
   Key,
   Flame,
   Search,
@@ -732,7 +733,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                             className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
                           >
                             <Award className="w-3.5 h-3.5" />
-                            <span>Declare Results</span>
+                            <span>Declare Results / Distribute Prize</span>
                           </button>
                         ) : (
                           <button
@@ -1717,51 +1718,93 @@ const DeclareResultsModal: React.FC<{ tournament: Tournament; isOpen: boolean; o
   isOpen,
   onClose,
 }) => {
-  const [registrations, setRegistrations] = useState<{ id: string; userId: string; userIgn: string; kills: number }[]>([]);
-  const [rank1UserId, setRank1UserId] = useState<string>('');
-  const [rank2UserId, setRank2UserId] = useState<string>('');
-  const [rank3UserId, setRank3UserId] = useState<string>('');
-  const [killsMap, setKillsMap] = useState<Record<string, number>>({});
+  const [playersList, setPlayersList] = useState<{ id: string; userId: string; userIgn: string; freeFireUid?: string }[]>([]);
+  const [playerRanks, setPlayerRanks] = useState<Record<string, string>>({});
+  const [playerKills, setPlayerKills] = useState<Record<string, number>>({});
   const [isDeclaring, setIsDeclaring] = useState(false);
+
+  // Prize configuration values
+  const perKillRate = Number(tournament.perKillReward || (tournament as any).perKill || 0);
+  const rank1Reward = Number(tournament.rank1Prize || (tournament as any).rank1 || 0);
+  const rank2Reward = Number(tournament.rank2Prize || (tournament as any).rank2 || 0);
+  const rank3Reward = Number(tournament.rank3Prize || 0);
 
   useEffect(() => {
     if (!isOpen) return;
-    const fetchRegs = async () => {
-      const snap = await getDocs(collection(db, `tournaments/${tournament.id}/registrations`));
-      const list = snap.docs.map((d) => ({
-        id: d.id,
-        userId: d.data().userId,
-        userIgn: d.data().userIgn,
-        kills: 0,
-      }));
 
-      // Also merge players from tournament.joinedPlayers if not present in subcollection
+    const fetchAllPlayers = async () => {
+      const mergedMap = new Map<string, { id: string; userId: string; userIgn: string; freeFireUid?: string }>();
+
+      // 1. Load from tournament.joinedPlayers array (Primary source of truth)
       if (Array.isArray(tournament.joinedPlayers)) {
         tournament.joinedPlayers.forEach((p) => {
-          if (p.uid && !list.some((item) => item.userId === p.uid)) {
-            list.push({
+          if (p.uid) {
+            mergedMap.set(p.uid, {
               id: `${tournament.id}_${p.uid}`,
               userId: p.uid,
               userIgn: p.ign || 'Gamer',
-              kills: 0,
+              freeFireUid: (p as any).freeFireUid || '',
             });
           }
         });
       }
 
-      setRegistrations(list);
-      if (list[0]) setRank1UserId(list[0].userId);
-      if (list[1]) setRank2UserId(list[1].userId);
-      if (list[2]) setRank3UserId(list[2].userId);
+      // 2. Also check subcollection registrations
+      try {
+        const snap = await getDocs(collection(db, `tournaments/${tournament.id}/registrations`));
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          if (data.userId && !mergedMap.has(data.userId)) {
+            mergedMap.set(data.userId, {
+              id: d.id,
+              userId: data.userId,
+              userIgn: data.userIgn || 'Gamer',
+              freeFireUid: data.freeFireUid || '',
+            });
+          }
+        });
+      } catch (err) {
+        console.warn('Subcollection registration fetch note:', err);
+      }
+
+      const list = Array.from(mergedMap.values());
+      setPlayersList(list);
+
+      // Pre-populate default ranks and kills
+      const initialRanks: Record<string, string> = {};
+      const initialKills: Record<string, number> = {};
+      list.forEach((p, index) => {
+        initialRanks[p.userId] = index === 0 ? '1' : index === 1 ? '2' : '';
+        initialKills[p.userId] = 0;
+      });
+      setPlayerRanks(initialRanks);
+      setPlayerKills(initialKills);
     };
-    fetchRegs();
+
+    fetchAllPlayers();
   }, [isOpen, tournament.id, tournament.joinedPlayers]);
 
   if (!isOpen) return null;
 
-  const handleDeclare = async (e: React.FormEvent) => {
+  // Calculate prize for a given player
+  const calculatePlayerPrize = (userId: string) => {
+    const kills = Number(playerKills[userId] || 0);
+    const rank = playerRanks[userId] || '';
+    let rankPrize = 0;
+    if (rank === '1') rankPrize = rank1Reward;
+    else if (rank === '2') rankPrize = rank2Reward;
+    else if (rank === '3') rankPrize = rank3Reward;
+
+    return (kills * perKillRate) + rankPrize;
+  };
+
+  // Total distributed prize calculation
+  const totalPrizeDistributed = playersList.reduce((acc, p) => acc + calculatePlayerPrize(p.userId), 0);
+
+  const handleDistributeWinnings = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!confirm('This will immediately credit the prize money (Rank splits + Kill rewards) directly into the winners\' Winnings Wallets. Confirm distribution?')) {
+
+    if (!confirm(`Are you sure you want to distribute ₹${totalPrizeDistributed} across ${playersList.length} players?\n\nThis will instantly credit each winner's withdrawable Winnings Balance in Firestore and set the match to COMPLETED.`)) {
       return;
     }
 
@@ -1770,174 +1813,232 @@ const DeclareResultsModal: React.FC<{ tournament: Tournament; isOpen: boolean; o
       await runTransaction(db, async (transaction) => {
         const winnersSummary: any[] = [];
 
-        // 1. Calculate each registered player's prize and credit their Winnings Balance
-        for (const reg of registrations) {
-          const kills = killsMap[reg.userId] || 0;
-          let rank = 0;
-          let prize = kills * (tournament.perKillReward || 0);
+        for (const player of playersList) {
+          const kills = Number(playerKills[player.userId] || 0);
+          const rankStr = playerRanks[player.userId] || '';
+          const rankNum = rankStr ? parseInt(rankStr, 10) : 0;
+          const totalPrize = calculatePlayerPrize(player.userId);
 
-          if (reg.userId === rank1UserId) {
-            rank = 1;
-            prize += tournament.rank1Prize || 0;
-          } else if (reg.userId === rank2UserId) {
-            rank = 2;
-            prize += tournament.rank2Prize || 0;
-          } else if (reg.userId === rank3UserId) {
-            rank = 3;
-            prize += tournament.rank3Prize || 0;
+          // 1. Credit player's Winnings Balance in Firestore 'users'
+          const userRef = doc(db, 'users', player.userId);
+          const userSnap = await transaction.get(userRef);
+
+          if (userSnap.exists()) {
+            const currentWinnings = Number(userSnap.data()?.winningsBalance || 0);
+            const currentPlayed = Number(userSnap.data()?.matchesPlayed || 0);
+            const currentKills = Number(userSnap.data()?.totalKills || 0);
+            const currentWon = Number(userSnap.data()?.tournamentsWon || 0);
+            const currentEarned = Number(userSnap.data()?.totalEarnings || 0);
+
+            transaction.update(userRef, {
+              winningsBalance: currentWinnings + totalPrize,
+              matchesPlayed: currentPlayed + 1,
+              totalKills: currentKills + kills,
+              tournamentsWon: currentWon + (rankNum === 1 ? 1 : 0),
+              totalEarnings: currentEarned + totalPrize,
+              updatedAt: new Date().toISOString(),
+            });
           }
 
-          if (prize > 0) {
-            const userRef = doc(db, 'users', reg.userId);
-            const userSnap = await transaction.get(userRef);
-            if (userSnap.exists()) {
-              const currentWinnings = userSnap.data()?.winningsBalance || 0;
-              transaction.update(userRef, {
-                winningsBalance: currentWinnings + prize,
-                updatedAt: new Date().toISOString(),
-              });
-            }
-          }
-
-          if (rank > 0 || kills > 0) {
+          if (totalPrize > 0 || kills > 0 || rankNum > 0) {
             winnersSummary.push({
-              rank,
-              userId: reg.userId,
-              ign: reg.userIgn,
-              kills,
-              prizeWon: prize,
+              rank: rankNum || null,
+              userId: player.userId,
+              ign: player.userIgn,
+              freeFireUid: player.freeFireUid || '',
+              kills: kills,
+              killReward: kills * perKillRate,
+              rankReward: rankNum === 1 ? rank1Reward : rankNum === 2 ? rank2Reward : 0,
+              prizeWon: totalPrize,
             });
           }
         }
 
-        // Sort winners by rank
+        // Sort winners by rank (Rank 1 first)
         winnersSummary.sort((a, b) => (a.rank || 99) - (b.rank || 99));
 
-        // 2. Update Tournament status to 'completed' and record results
+        const resultsPayload = {
+          declaredAt: new Date().toISOString(),
+          totalDistributed: totalPrizeDistributed,
+          winners: winnersSummary,
+        };
+
+        // 2. Update Tournament & Match document in Firestore
         const tourRef = doc(db, 'tournaments', tournament.id);
         transaction.update(tourRef, {
           status: 'completed',
-          results: {
-            declaredAt: new Date().toISOString(),
-            winners: winnersSummary,
-          },
+          results: resultsPayload,
+          updatedAt: new Date().toISOString(),
+        });
+
+        // 3. Update Match document in 'matches' collection
+        const matchRef = doc(db, 'matches', tournament.id);
+        transaction.update(matchRef, {
+          status: 'COMPLETED',
+          results: resultsPayload,
           updatedAt: new Date().toISOString(),
         });
       });
 
-      alert('Booyah! Tournament results declared and winnings credited to participants.');
+      alert(`Booyah! ₹${totalPrizeDistributed} successfully credited to participants' Winnings Wallets. Match marked as COMPLETED.`);
       onClose();
     } catch (err: unknown) {
-      alert(`Failed to declare results: ${err instanceof Error ? err.message : String(err)}`);
+      console.error('Error distributing winnings:', err);
+      alert(`Failed to distribute winnings: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsDeclaring(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-lg bg-[#0f0f1c] border border-amber-500/30 rounded-2xl p-5 sm:p-6 shadow-2xl relative my-auto">
-        <h3 className="text-base font-bold text-white font-heading mb-1">Declare Match Results & Distribute Cash</h3>
-        <p className="text-xs text-slate-400 mb-4">
-          Select Booyah winner, ranks, and kill counts. Payouts credit immediately to Winnings Wallets.
-        </p>
-
-        {registrations.length === 0 ? (
-          <p className="text-xs text-amber-400 p-4 bg-amber-500/10 rounded-xl">
-            No registered players found in this tournament. Cannot declare results.
-          </p>
-        ) : (
-          <form onSubmit={handleDeclare} className="space-y-4 text-xs">
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block font-semibold text-amber-400 mb-1">#1 Booyah (Rank 1)</label>
-                <select
-                  value={rank1UserId}
-                  onChange={(e) => setRank1UserId(e.target.value)}
-                  className="w-full h-10 px-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                >
-                  {registrations.map((r) => (
-                    <option key={r.userId} value={r.userId}>
-                      {r.userIgn}
-                    </option>
-                  ))}
-                </select>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+      <div className="w-full max-w-2xl bg-[#0a0a14] border border-amber-500/40 rounded-2xl p-5 sm:p-6 shadow-2xl relative my-auto max-h-[92vh] flex flex-col">
+        {/* Header Bar */}
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                <Award className="w-4 h-4 stroke-[2.5]" />
               </div>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">Rank 2</label>
-                <select
-                  value={rank2UserId}
-                  onChange={(e) => setRank2UserId(e.target.value)}
-                  className="w-full h-10 px-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                >
-                  <option value="">None</option>
-                  {registrations.map((r) => (
-                    <option key={r.userId} value={r.userId}>
-                      {r.userIgn}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">Rank 3</label>
-                <select
-                  value={rank3UserId}
-                  onChange={(e) => setRank3UserId(e.target.value)}
-                  className="w-full h-10 px-2 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono"
-                >
-                  <option value="">None</option>
-                  {registrations.map((r) => (
-                    <option key={r.userId} value={r.userId}>
-                      {r.userIgn}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <h3 className="text-base sm:text-lg font-bold text-white font-heading">
+                Declare Match Result & Distribute Prizes
+              </h3>
             </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Match: <span className="text-amber-400 font-semibold">{tournament.title}</span>
+            </p>
+          </div>
 
-            <div>
-              <label className="block font-semibold text-slate-300 mb-1">Enter Kills Per Player (₹{tournament.perKillReward}/Kill)</label>
-              <div className="max-h-48 overflow-y-auto space-y-2 p-2 bg-slate-900 rounded-xl border border-slate-800">
-                {registrations.map((r) => (
-                  <div key={r.userId} className="flex items-center justify-between gap-3 text-xs">
-                    <span className="font-mono text-white truncate">{r.userIgn}</span>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-slate-500 font-mono">Kills:</span>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Prize Rates Overview Card */}
+        <div className="grid grid-cols-3 gap-2 my-3 p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold">Per Kill Reward</span>
+            <span className="font-mono font-bold text-amber-400 text-sm">₹{perKillRate}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold">Rank 1 (Booyah)</span>
+            <span className="font-mono font-bold text-emerald-400 text-sm">₹{rank1Reward}</span>
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-semibold">Rank 2 Prize</span>
+            <span className="font-mono font-bold text-teal-400 text-sm">₹{rank2Reward}</span>
+          </div>
+        </div>
+
+        {/* Players List Form */}
+        {playersList.length === 0 ? (
+          <div className="p-6 text-center bg-slate-900/50 rounded-xl border border-slate-800 my-4">
+            <Users className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+            <p className="text-xs text-amber-400 font-semibold">No registered players found in this tournament.</p>
+            <p className="text-[11px] text-slate-500 mt-1">Cannot declare results without registered players.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleDistributeWinnings} className="flex-1 overflow-y-auto space-y-3 pr-1">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[11px] text-slate-400 uppercase tracking-wider font-semibold px-2">
+                <span>Player</span>
+                <div className="flex items-center gap-4 sm:gap-6">
+                  <span>Rank</span>
+                  <span>Kills</span>
+                  <span className="w-20 text-right">Prize (₹)</span>
+                </div>
+              </div>
+
+              {playersList.map((player) => {
+                const prize = calculatePlayerPrize(player.userId);
+                return (
+                  <div
+                    key={player.userId}
+                    className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 flex items-center justify-between gap-2 text-xs transition-colors"
+                  >
+                    {/* Player Info */}
+                    <div className="min-w-0 flex-1">
+                      <span className="font-bold text-white block truncate">{player.userIgn}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        UID: {player.freeFireUid || player.userId.slice(0, 10)}
+                      </span>
+                    </div>
+
+                    {/* Rank Dropdown */}
+                    <select
+                      value={playerRanks[player.userId] || ''}
+                      onChange={(e) =>
+                        setPlayerRanks({
+                          ...playerRanks,
+                          [player.userId]: e.target.value,
+                        })
+                      }
+                      className="h-8 px-2 rounded-lg bg-black border border-slate-700 text-white font-mono text-xs focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="">No Rank</option>
+                      <option value="1">🥇 1st (Booyah)</option>
+                      <option value="2">🥈 2nd Place</option>
+                      <option value="3">🥉 3rd Place</option>
+                    </select>
+
+                    {/* Kills Input */}
+                    <div className="flex items-center gap-1">
                       <input
                         type="number"
                         min={0}
-                        max={30}
-                        value={killsMap[r.userId] ?? 0}
+                        max={40}
+                        value={playerKills[player.userId] ?? 0}
                         onChange={(e) =>
-                          setKillsMap({
-                            ...killsMap,
-                            [r.userId]: Math.max(0, parseInt(e.target.value) || 0),
+                          setPlayerKills({
+                            ...playerKills,
+                            [player.userId]: Math.max(0, parseInt(e.target.value) || 0),
                           })
                         }
-                        className="w-14 h-8 px-2 rounded bg-black border border-slate-700 text-center text-amber-400 font-mono font-bold"
+                        className="w-14 h-8 px-1 text-center rounded-lg bg-black border border-slate-700 text-amber-400 font-mono font-bold text-xs focus:outline-none focus:border-amber-500"
+                        title="Enter total kills confirmed for this player"
                       />
                     </div>
+
+                    {/* Live Calculated Total Prize */}
+                    <div className="w-20 text-right font-mono font-bold text-emerald-400 text-xs">
+                      {prize > 0 ? `+₹${prize}` : '₹0'}
+                    </div>
                   </div>
-                ))}
+                );
+              })}
+            </div>
+
+            {/* Total Prize Pool Summary */}
+            <div className="p-3 rounded-xl bg-black/60 border border-emerald-500/30 flex items-center justify-between text-xs mt-3">
+              <div>
+                <span className="text-slate-400 block text-[11px]">Total Distribution Summary</span>
+                <span className="text-slate-300 font-semibold">{playersList.length} Players Evaluated</span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 uppercase block">Total Payout</span>
+                <span className="text-base font-bold font-mono text-emerald-400">₹{totalPrizeDistributed}</span>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300"
+                className="h-10 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isDeclaring}
-                className="px-5 py-2 rounded-xl bg-emerald-500 font-bold text-black"
+                className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-bold text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
               >
-                {isDeclaring ? 'Distributing Winnings...' : 'Credit Prizes & Complete Match'}
+                <Award className="w-4 h-4 stroke-[2.5]" />
+                <span>{isDeclaring ? 'Distributing Winnings...' : 'Distribute Winnings'}</span>
               </button>
             </div>
           </form>

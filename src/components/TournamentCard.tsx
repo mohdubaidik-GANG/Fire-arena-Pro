@@ -13,7 +13,8 @@ import {
   Award,
   ChevronRight,
   ShieldCheck,
-  Zap
+  Zap,
+  FileText
 } from 'lucide-react';
 import { Tournament, TournamentRegistration } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -257,7 +258,16 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
       </div>
 
       {/* Bottom Action Bar */}
-      <div className="p-4 sm:p-5 pt-0">
+      <div className="p-4 sm:p-5 pt-0 space-y-2">
+        <button
+          type="button"
+          onClick={() => onViewDetails?.(tournament)}
+          className="w-full h-8 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 text-slate-300 hover:text-amber-400 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+        >
+          <FileText className="w-3.5 h-3.5 text-amber-400" />
+          <span>View Rules & Details</span>
+        </button>
+
         {isJoined ? (
           <button
             disabled

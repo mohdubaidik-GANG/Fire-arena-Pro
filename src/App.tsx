@@ -16,7 +16,8 @@ import {
   Zap,
   Sword,
   Target,
-  Coins
+  Coins,
+  User
 } from 'lucide-react';
 import { collection, query, onSnapshot, getDocs, setDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -28,6 +29,7 @@ import { TournamentCard } from './components/TournamentCard';
 import { JoinMatchModal } from './components/JoinMatchModal';
 import { WalletModal } from './components/WalletModal';
 import { ProfileModal } from './components/ProfileModal';
+import { MatchRulesModal } from './components/MatchRulesModal';
 import { WalletAndCareerStats } from './components/WalletAndCareerStats';
 import { AdminDashboard } from './components/Admin/AdminDashboard';
 import { UnauthorizedScreen } from './components/Admin/UnauthorizedScreen';
@@ -142,6 +144,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [walletInitialTab, setWalletInitialTab] = useState<'overview' | 'deposit' | 'withdraw' | 'history'>('overview');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [selectedTournamentToJoin, setSelectedTournamentToJoin] = useState<Tournament | null>(null);
+  const [selectedTournamentForRules, setSelectedTournamentForRules] = useState<Tournament | null>(null);
 
   // Tournaments & Registrations Data
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -399,7 +402,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       />
 
       {/* Main Container */}
-      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 flex-1 space-y-6">
+      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 pb-24 sm:pb-12 flex-1 space-y-6">
         {/* Hero Banner / Quick Announcements */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500/10 via-[#131322] to-orange-500/10 border border-amber-500/30 p-5 sm:p-6 shadow-xl">
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -579,6 +582,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                     tournament={tournament}
                     userRegistration={myRegistrations[tournament.id]}
                     onJoinClick={(tour) => setSelectedTournamentToJoin(tour)}
+                    onViewDetails={(tour) => setSelectedTournamentForRules(tour)}
                   />
                 ))}
               </div>
@@ -686,6 +690,74 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         onClose={() => setProfileModalOpen(false)}
         onOpenWallet={() => handleOpenWallet('overview')}
       />
+
+      {/* Match Rules & Description Modal */}
+      <MatchRulesModal
+        tournament={selectedTournamentForRules}
+        isOpen={Boolean(selectedTournamentForRules)}
+        onClose={() => setSelectedTournamentForRules(null)}
+        onJoinClick={(tour) => setSelectedTournamentToJoin(tour)}
+      />
+
+      {/* ================= MOBILE BOTTOM NAVIGATION BAR (APK Optimized) ================= */}
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#080810]/95 backdrop-blur-xl border-t border-slate-800/90 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        <button
+          onClick={() => setActiveTab('tournaments')}
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all cursor-pointer ${
+            activeTab === 'tournaments'
+              ? 'text-amber-400 font-bold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Trophy className={`w-4 h-4 ${activeTab === 'tournaments' ? 'stroke-[2.5] text-amber-400' : ''}`} />
+          <span className="text-[10px]">Arena</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('my_matches')}
+          className={`relative flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all cursor-pointer ${
+            activeTab === 'my_matches'
+              ? 'text-amber-400 font-bold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Crosshair className={`w-4 h-4 ${activeTab === 'my_matches' ? 'stroke-[2.5] text-amber-400' : ''}`} />
+          <span className="text-[10px]">My Matches</span>
+          {myRegisteredCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-black text-[9px] font-mono font-bold flex items-center justify-center">
+              {myRegisteredCount}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => handleOpenWallet('overview')}
+          className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-slate-400 hover:text-emerald-400 transition-all cursor-pointer"
+        >
+          <Wallet className="w-4 h-4 text-emerald-400" />
+          <span className="text-[10px] text-emerald-400 font-semibold">Wallet</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('rules')}
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all cursor-pointer ${
+            activeTab === 'rules'
+              ? 'text-amber-400 font-bold'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Shield className={`w-4 h-4 ${activeTab === 'rules' ? 'stroke-[2.5] text-amber-400' : ''}`} />
+          <span className="text-[10px]">Rules</span>
+        </button>
+
+        <button
+          onClick={() => setProfileModalOpen(true)}
+          className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-slate-400 hover:text-white transition-all cursor-pointer"
+        >
+          <User className="w-4 h-4 text-amber-400" />
+          <span className="text-[10px]">Profile</span>
+        </button>
+      </nav>
     </div>
   );
 }

@@ -130,7 +130,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const session = JSON.parse(savedSessionRaw);
         if (session && session.uid) {
           hasLocalSession = true;
-          if (session.isAdmin) {
+          if (session.isAdmin || session.role === 'admin') {
             const adminUser = {
               uid: session.uid,
               email: session.email || 'ubedmo650@gmail.com',
@@ -141,8 +141,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setProfile({
               uid: session.uid,
               email: session.email || 'ubedmo650@gmail.com',
-              ign: 'Command Operator',
-              freeFireUid: '00000000',
+              ign: 'Super Admin',
+              freeFireUid: '15524834348',
               depositBalance: 99999,
               winningsBalance: 99999,
               isBanned: false,
@@ -273,17 +273,55 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     if (!cleanId) {
       setLoading(false);
-      throw new Error('Please enter your Free Fire UID or Email.');
+      throw new Error('Please enter your Free Fire UID.');
     }
 
-    // A. Check for Admin Login
+    // 1. Hardcoded Super Admin Check (Explicit Request: UID 15524834348, Pass: 271845)
+    if (cleanId === '15524834348' && cleanPass === '271845') {
+      const adminEmail = SUPER_ADMIN_EMAILS[0] || 'ubedmo650@gmail.com';
+      const adminUser = {
+        uid: 'admin_15524834348',
+        email: adminEmail,
+        displayName: 'Super Admin',
+      };
+      const adminProf: UserProfile = {
+        uid: 'admin_15524834348',
+        email: adminEmail,
+        ign: 'Super Admin',
+        freeFireUid: '15524834348',
+        depositBalance: 99999,
+        winningsBalance: 99999,
+        isBanned: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      setUser(adminUser);
+      setProfile(adminProf);
+      setIsAdmin(true);
+      setNeedsProfileSetup(false);
+      setLoading(false);
+
+      localStorage.setItem(
+        SESSION_STORAGE_KEY,
+        JSON.stringify({
+          type: 'credentials',
+          uid: adminUser.uid,
+          email: adminEmail,
+          isAdmin: true,
+          role: 'admin',
+        })
+      );
+      return { needsPasswordLink: false };
+    }
+
+    // Legacy/Alias Check for Admin
     const isAdminIdentifier =
       cleanId.toLowerCase() === 'admin' ||
       SUPER_ADMIN_EMAILS.some((e) => e.toLowerCase() === cleanId.toLowerCase());
 
     if (isAdminIdentifier) {
-      // Master admin passwords allowed: admin123, firearena@admin, admin, admin2025
-      const validAdminPasswords = ['admin123', 'admin', 'firearena@admin', 'admin2025', 'firearena123'];
+      const validAdminPasswords = ['admin123', 'admin', 'firearena@admin', 'admin2025', 'firearena123', '271845'];
       if (!cleanPass) {
         setLoading(false);
         throw new Error('Please enter the Admin password.');
@@ -304,8 +342,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const adminProf: UserProfile = {
         uid: 'admin_ubedmo650',
         email: adminEmail,
-        ign: 'Command Operator',
-        freeFireUid: '00000000',
+        ign: 'Super Admin',
+        freeFireUid: '15524834348',
         depositBalance: 99999,
         winningsBalance: 99999,
         isBanned: false,
@@ -321,7 +359,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       localStorage.setItem(
         SESSION_STORAGE_KEY,
-        JSON.stringify({ type: 'credentials', uid: adminUser.uid, email: adminEmail, isAdmin: true })
+        JSON.stringify({
+          type: 'credentials',
+          uid: adminUser.uid,
+          email: adminEmail,
+          isAdmin: true,
+          role: 'admin',
+        })
       );
       return { needsPasswordLink: false };
     }
