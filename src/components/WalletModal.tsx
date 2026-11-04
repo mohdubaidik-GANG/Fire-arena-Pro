@@ -68,11 +68,18 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [withdrawAmount, setWithdrawAmount] = useState<number>(100);
   const [withdrawMethod, setWithdrawMethod] = useState<'upi' | 'redeem_code'>('upi');
   const [withdrawUpiId, setWithdrawUpiId] = useState<string>('');
+  const [deliveryEmail, setDeliveryEmail] = useState<string>(user?.email || '');
   const [withdrawSubmitting, setWithdrawSubmitting] = useState<boolean>(false);
   const [withdrawSuccessMsg, setWithdrawSuccessMsg] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   const [copiedUpi, setCopiedUpi] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (user?.email && !deliveryEmail) {
+      setDeliveryEmail(user.email);
+    }
+  }, [user?.email]);
 
   // Sync initial tab when changed
   useEffect(() => {
@@ -213,11 +220,16 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
     const payoutEmail = user?.email || '';
     const cleanUpi = (withdrawUpiId || '').trim();
-    const payoutMethod = withdrawMethod || 'upi';
-    const fallbackDeliveryEmail = user?.email || payoutEmail || '';
+    const payoutMethod = withdrawMethod === 'redeem_code' ? 'REDEEM_CODE' : 'UPI';
+    const cleanDeliveryEmail = deliveryEmail ? deliveryEmail.trim() : (user?.email || payoutEmail || '');
 
-    if (payoutMethod === 'upi' && !cleanUpi.includes('@')) {
+    if (withdrawMethod === 'upi' && !cleanUpi.includes('@')) {
       setWithdrawError('Please enter a valid UPI ID (e.g., yourname@okaxis or number@paytm)');
+      return;
+    }
+
+    if (withdrawMethod === 'redeem_code' && (!cleanDeliveryEmail || !cleanDeliveryEmail.includes('@'))) {
+      setWithdrawError('Please enter a valid email address for Google Play code delivery');
       return;
     }
 
@@ -229,9 +241,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         userEmail: payoutEmail,
         userIgn: profile.ign || 'Gamer',
         amount: Number(amount) || 0,
-        method: payoutMethod,
-        upiId: payoutMethod === 'upi' ? cleanUpi : '',
-        deliveryEmail: fallbackDeliveryEmail,
+        method: withdrawMethod || 'upi',
+        payoutMethod: payoutMethod,
+        upiId: withdrawMethod === 'upi' ? cleanUpi : '',
+        deliveryEmail: cleanDeliveryEmail,
         status: 'pending',
         createdAt: new Date().toISOString(),
       };
@@ -637,11 +650,20 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     </p>
                   </div>
                 ) : (
-                  <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-xl text-xs space-y-1">
-                    <span className="text-slate-400 block">Redeem Code Delivery Email:</span>
-                    <span className="text-amber-400 font-mono font-semibold">{user?.email}</span>
-                    <p className="text-[11px] text-slate-500">
-                      The official Google Play Redeem Code voucher will be generated and displayed in your profile history as well as sent to this address.
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      Enter Email for Redeem Code Delivery <span className="text-amber-400">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={deliveryEmail}
+                      onChange={(e) => setDeliveryEmail(e.target.value)}
+                      placeholder="your-email@gmail.com"
+                      required
+                      className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-amber-500"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      The official Google Play Redeem Code voucher will be generated and delivered to this email address once approved by Admin.
                     </p>
                   </div>
                 )}

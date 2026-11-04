@@ -16,7 +16,12 @@ import {
   EyeOff,
   Link as LinkIcon,
   X,
-  ArrowRight
+  ArrowRight,
+  BookOpen,
+  HelpCircle,
+  MessageCircle,
+  ExternalLink,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserProfile } from '../types';
@@ -32,6 +37,10 @@ export const AuthGate: React.FC = () => {
 
   // Tab State: 'login' | 'register'
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+
+  // Help Guide Modal State
+  const [guideModalOpen, setGuideModalOpen] = useState(false);
+  const [guideTab, setGuideTab] = useState<'register' | 'login'>('register');
 
   // Login Form States
   const [loginIdentifier, setLoginIdentifier] = useState('');
@@ -147,6 +156,18 @@ export const AuthGate: React.FC = () => {
         <div className="absolute -inset-1 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 rounded-3xl blur-xl opacity-70 pointer-events-none" />
 
         <div className="relative bg-[#0d0d16] border border-amber-500/20 rounded-2xl p-6 sm:p-7 shadow-2xl">
+          {/* Top Right Help Guide Button */}
+          <div className="flex justify-end mb-2">
+            <button
+              type="button"
+              onClick={() => setGuideModalOpen(true)}
+              className="h-7 px-2.5 rounded-full bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 text-[11px] font-semibold flex items-center gap-1.5 shadow-sm shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+              <span>Login Kaise Karein? (Guide)</span>
+            </button>
+          </div>
+
           {/* Logo Brand Header */}
           <div className="flex flex-col items-center text-center mb-6">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20 mb-3 border border-amber-400/40">
@@ -238,6 +259,9 @@ export const AuthGate: React.FC = () => {
                     className="w-full h-11 pl-10 pr-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
                   />
                 </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Purane users apna Free Fire UID ya Email daalein.
+                </p>
               </div>
 
               <div>
@@ -245,8 +269,8 @@ export const AuthGate: React.FC = () => {
                   <label className="font-semibold text-slate-300">
                     Account Password <span className="text-amber-400">*</span>
                   </label>
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    Purana user? Leave empty to link!
+                  <span className="text-[10px] text-amber-400 font-mono">
+                    Password nahi set? Leave empty & click Login to link!
                   </span>
                 </div>
                 <div className="relative">
@@ -262,6 +286,7 @@ export const AuthGate: React.FC = () => {
                     type="button"
                     onClick={() => setShowLoginPassword(!showLoginPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
+                    title={showLoginPassword ? 'Hide password' : 'Show password'}
                   >
                     {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -274,7 +299,7 @@ export const AuthGate: React.FC = () => {
                 className="w-full h-11 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70 mt-1"
               >
                 <Key className="w-4 h-4 stroke-[2.5]" />
-                <span>{isSubmitting ? 'Authenticating...' : 'Enter FireArena MAX'}</span>
+                <span>{isSubmitting ? 'Authenticating...' : 'Login to Play'}</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </form>
@@ -316,12 +341,14 @@ export const AuthGate: React.FC = () => {
                     className="w-full h-10 pl-10 pr-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
                   />
                 </div>
-                <p className="text-[10px] text-slate-500 mt-0.5">Found in your Free Fire profile under your avatar.</p>
+                <p className="text-[10px] text-amber-400/90 mt-1 font-mono">
+                  💡 Free Fire profile se 8-11 digit numeric UID daalein.
+                </p>
               </div>
 
               <div>
                 <label className="block font-semibold text-slate-300 mb-1">
-                  Mobile Number (For UPI Payouts)
+                  WhatsApp / Mobile Number (For Payouts)
                 </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -329,7 +356,7 @@ export const AuthGate: React.FC = () => {
                     type="tel"
                     value={regPhone}
                     onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    placeholder="10-digit PhonePe / GPay number"
+                    placeholder="10-digit PhonePe / WhatsApp number"
                     className="w-full h-10 pl-10 pr-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -337,7 +364,7 @@ export const AuthGate: React.FC = () => {
 
               <div>
                 <label className="block font-semibold text-slate-300 mb-1">
-                  Set Password <span className="text-amber-400">*</span>
+                  Account Password (Min 6 Characters) <span className="text-amber-400">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -345,7 +372,7 @@ export const AuthGate: React.FC = () => {
                     type={showRegPassword ? 'text' : 'password'}
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="Min 4 characters"
+                    placeholder="Set 6+ character password"
                     required
                     minLength={4}
                     className="w-full h-10 pl-10 pr-10 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
@@ -354,6 +381,7 @@ export const AuthGate: React.FC = () => {
                     type="button"
                     onClick={() => setShowRegPassword(!showRegPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 cursor-pointer"
+                    title={showRegPassword ? 'Hide password' : 'Show password'}
                   >
                     {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -366,7 +394,7 @@ export const AuthGate: React.FC = () => {
                 className="w-full h-11 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-70 mt-1"
               >
                 <User className="w-4 h-4 stroke-[2.5]" />
-                <span>{isSubmitting ? 'Creating Profile...' : 'Create Account & Join Arena'}</span>
+                <span>{isSubmitting ? 'Creating Profile...' : 'Create Account'}</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </form>
@@ -418,6 +446,198 @@ export const AuthGate: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* ================= STEP-BY-STEP HOW TO LOGIN & REGISTER GUIDE MODAL ================= */}
+      {guideModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
+          <div className="w-full max-w-lg bg-[#0e0e1a] border border-amber-500/40 rounded-2xl p-5 sm:p-6 shadow-2xl relative my-auto">
+            <button
+              onClick={() => setGuideModalOpen(false)}
+              className="absolute right-4 top-4 w-8 h-8 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-black shrink-0 shadow-lg shadow-amber-500/20">
+                <BookOpen className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-white font-heading">
+                  How to Login & Register Guide
+                </h3>
+                <p className="text-xs text-amber-400 font-mono">FireArena MAX Complete Gamer Manual</p>
+              </div>
+            </div>
+
+            {/* Guide Tabs */}
+            <div className="flex items-center p-1 bg-slate-900 rounded-xl border border-slate-800 mb-5">
+              <button
+                type="button"
+                onClick={() => setGuideTab('register')}
+                className={`flex-1 h-9 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  guideTab === 'register'
+                    ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>Naye Users (Register Guide)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGuideTab('login')}
+                className={`flex-1 h-9 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  guideTab === 'login'
+                    ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>Purane Users (Login Guide)</span>
+              </button>
+            </div>
+
+            {/* Guide Content: Tab 1 (Register) */}
+            {guideTab === 'register' && (
+              <div className="space-y-3 text-xs">
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-amber-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    1
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 1: "Register" tab par click karein</strong>
+                    <p className="text-slate-400 mt-0.5">Screen ke top par diye gaye "Register (New Gamer)" tab ko chunein.</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-amber-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    2
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 2: Apna Free Fire In-Game Name (IGN) enter karein</strong>
+                    <p className="text-slate-400 mt-0.5">Apna wahi IGN likhein jo Free Fire MAX game ke andar aapka display name hai.</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-amber-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    3
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 3: Free Fire profile se 8-11 digit UID copy karein</strong>
+                    <p className="text-slate-400 mt-0.5">Game profile ke avatar ke neeche se numeric UID copy karke yahan paste karein.</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-amber-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    4
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 4: WhatsApp number aur 6+ character Password enter karein</strong>
+                    <p className="text-slate-400 mt-0.5">Apna mobile number daalein aur yaad rakhne yogya strong password set karein.</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-amber-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    5
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 5: "Create Account" par click karein</strong>
+                    <p className="text-slate-400 mt-0.5">Aapka profile instantly create ho jayega aur aap Arena ke tournaments join karne ke liye ready ho jayenge.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Guide Content: Tab 2 (Login) */}
+            {guideTab === 'login' && (
+              <div className="space-y-3 text-xs">
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    1
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 1: "Login" tab select karein</strong>
+                    <p className="text-slate-400 mt-0.5">Top selector me "Gamer Login" tab select karein.</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    2
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 2: Apni registered Free Fire UID ya Email daalein</strong>
+                    <p className="text-slate-400 mt-0.5">Identifier box me apna UID (e.g. 74892314) ya registered email daalein.</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    3
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 3: Apna Password enter karein</strong>
+                    <p className="text-slate-400 mt-0.5">
+                      Apna set kiya hua password enter karein. (Purane Google users bina password dale Login dabayein taaki account link popup khul jaye).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 text-black font-bold flex items-center justify-center text-xs shrink-0 mt-0.5">
+                    4
+                  </div>
+                  <div>
+                    <strong className="text-white">Step 4: "Login to Play" dabayein</strong>
+                    <p className="text-slate-400 mt-0.5">Button click karte hi aapka wallet balance aur booked matches restore ho kar dashboard khul jayega.</p>
+                  </div>
+                </div>
+
+                {/* Admin Access Note */}
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5">
+                  <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-amber-400 block font-heading">Super Admin Direct Access:</strong>
+                    <p className="text-slate-300 mt-0.5">
+                      Admin apni email (<code className="text-white bg-black/60 px-1 py-0.5 rounded">ubedmo650@gmail.com</code>) ya identifier <code className="text-white bg-black/60 px-1 py-0.5 rounded">admin</code> aur password se directly Admin Command Center me login kar sakte hain.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Quick WhatsApp Support Note at bottom */}
+            <div className="mt-5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-3 text-xs">
+              <div className="space-y-0.5">
+                <span className="font-bold text-white flex items-center gap-1.5">
+                  <MessageCircle className="w-4 h-4 text-emerald-400" />
+                  <span>24/7 Gamer Support Helpline</span>
+                </span>
+                <p className="text-slate-400 text-[11px]">
+                  Login ya Password me pareshani hone par Admin Support se WhatsApp par sampark karein.
+                </p>
+              </div>
+
+              <a
+                href="https://wa.me/919876543210?text=Hi%20FireArena%20Admin,%20I%20need%20help%20with%20my%20login%20password"
+                target="_blank"
+                rel="noreferrer"
+                className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 shrink-0 transition-colors"
+              >
+                <span>WhatsApp</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================= EXISTING USER MIGRATION MODAL ================= */}
       {linkModalOpen && profileToLink && (

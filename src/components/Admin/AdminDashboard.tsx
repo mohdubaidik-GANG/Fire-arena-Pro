@@ -410,6 +410,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // Direct Match Deletion
+  const handleDeleteMatch = async (matchId: string) => {
+    if (window.confirm("Kya aap sach me is match ko permanently delete karna chahte hain?")) {
+      try {
+        await deleteDoc(doc(db, 'matches', matchId));
+        try {
+          await deleteDoc(doc(db, 'tournaments', matchId));
+        } catch {
+          // tournaments doc might not exist
+        }
+        alert("Match successfully deleted!");
+      } catch (err: unknown) {
+        console.error("Delete match error:", err);
+        alert("Failed to delete match: " + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+  };
+
+  // Quick 1-Click Status Management
+  const handleSetMatchStatus = async (matchId: string, newStatus: 'UPCOMING' | 'LIVE' | 'COMPLETED') => {
+    try {
+      await updateDoc(doc(db, 'matches', matchId), {
+        status: newStatus,
+        updatedAt: new Date().toISOString(),
+      });
+      try {
+        await updateDoc(doc(db, 'tournaments', matchId), {
+          status: newStatus.toLowerCase() as TournamentStatus,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch {
+        // tournaments doc might not exist
+      }
+    } catch (err: unknown) {
+      console.error("Update match status error:", err);
+      alert("Failed to update status: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   // Save Settings
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -672,6 +711,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
                     {/* Admin Actions for Tournament */}
                     <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                      {/* Room & Results Buttons */}
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           onClick={() => setEditingRoomTour(t)}
@@ -705,14 +745,76 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         )}
                       </div>
 
-                      <button
-                        onClick={() => handleCancelAndDeleteTournament(t)}
-                        className="w-full h-8 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                        title="Cancel match and refund all registered players"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Delete / Cancel Match ({t.joinedPlayers ? t.joinedPlayers.length : 0} to refund)</span>
-                      </button>
+                      {/* Status Control Buttons */}
+                      <div className="p-2 rounded-xl bg-slate-900/60 border border-slate-800 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-amber-400" />
+                            <span>Match Status:</span>
+                          </span>
+                          <span className="font-mono font-bold text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 uppercase">
+                            {t.status || 'UPCOMING'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleSetMatchStatus(t.id, 'UPCOMING')}
+                            className={`h-7 px-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                              t.status?.toUpperCase() === 'UPCOMING'
+                                ? 'bg-blue-500/25 text-blue-300 border-blue-500 shadow-sm'
+                                : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
+                            }`}
+                          >
+                            [ Set UPCOMING ]
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetMatchStatus(t.id, 'LIVE')}
+                            className={`h-7 px-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                              t.status?.toUpperCase() === 'LIVE'
+                                ? 'bg-emerald-500/25 text-emerald-300 border-emerald-500 shadow-sm animate-pulse'
+                                : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
+                            }`}
+                          >
+                            [ Set LIVE ]
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSetMatchStatus(t.id, 'COMPLETED')}
+                            className={`h-7 px-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer border ${
+                              t.status?.toUpperCase() === 'COMPLETED'
+                                ? 'bg-purple-500/25 text-purple-300 border-purple-500 shadow-sm'
+                                : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
+                            }`}
+                          >
+                            [ Set COMPLETED ]
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Match Deletion Actions */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMatch(t.id)}
+                          className="flex-1 h-8 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          title="Permanently delete this match from database"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>🗑️ Delete Match</span>
+                        </button>
+                        {Array.isArray(t.joinedPlayers) && t.joinedPlayers.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelAndDeleteTournament(t)}
+                            className="h-8 px-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                            title="Refund registered players and cancel match"
+                          >
+                            <span>Refund & Cancel ({t.joinedPlayers.length})</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
