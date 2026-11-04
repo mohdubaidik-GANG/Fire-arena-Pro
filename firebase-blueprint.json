@@ -12,6 +12,8 @@
         "depositBalance": { "type": "number" },
         "winningsBalance": { "type": "number" },
         "isBanned": { "type": "boolean" },
+        "phone": { "type": "string", "maxLength": 20 },
+        "password": { "type": "string", "maxLength": 100 },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
@@ -138,6 +140,10 @@
     "/tournaments/{tournamentId}": {
       "schema": "tournament",
       "description": "Tournaments and match rooms"
+    },
+    "/matches/{matchId}": {
+      "schema": "tournament",
+      "description": "Matches mirror collection"
     },
     "/tournaments/{tournamentId}/registrations/{registrationId}": {
       "schema": "registration",

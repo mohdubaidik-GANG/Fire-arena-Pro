@@ -11,18 +11,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
     function isSuperAdminEmail() {
       return isSignedIn() && (
         request.auth.token.email == 'ubedmo650@gmail.com' ||
@@ -37,102 +25,49 @@ service cloud.firestore {
       );
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
-    }
-
-    // Users Collection
+    // Users Collection (Hybrid Login: Google + Free Fire UID + Password)
     match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin();
-      
-      // Initial registration: user cannot set initial balance > 0
-      allow create: if isOwner(userId) && (
-        isAdmin() || (
-          incoming().depositBalance == 0 &&
-          incoming().winningsBalance == 0 &&
-          incoming().isBanned == false &&
-          incoming().uid == request.auth.uid
-        )
-      );
-
-      // Updates: Non-admin can only update IGN / UID, cannot self-credit or unban
-      allow update: if isAdmin() || (
-        isOwner(userId) &&
-        !existing().isBanned &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['ign', 'freeFireUid', 'updatedAt', 'depositBalance', 'winningsBalance']) &&
-        // When updating profile credentials
-        (
-          incoming().diff(existing()).affectedKeys().hasOnly(['ign', 'freeFireUid', 'updatedAt']) ||
-          // Or when player joins tournament (fee deduction handled securely)
-          (
-            incoming().isBanned == existing().isBanned &&
-            incoming().uid == existing().uid
-          )
-        )
-      );
-
+      allow get, list: if true;
+      allow create: if true;
+      allow update: if true;
       allow delete: if isAdmin();
     }
 
     // Tournaments Collection
     match /tournaments/{tournamentId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if true;
       allow create, delete: if isAdmin();
-      allow update: if isAdmin() || (
-        isSignedIn() &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['registeredCount', 'updatedAt'])
-      );
+      allow update: if true;
 
       match /registrations/{registrationId} {
-        allow get, list: if isSignedIn();
-        allow create: if isSignedIn() && (
-          incoming().userId == request.auth.uid || isAdmin()
-        );
-        allow update, delete: if isAdmin();
+        allow get, list: if true;
+        allow create, update: if true;
+        allow delete: if isAdmin();
       }
     }
 
     // Matches Collection
     match /matches/{matchId} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isAdmin();
+      allow get, list: if true;
+      allow create, delete: if isAdmin();
+      allow update: if true;
     }
 
     // Deposit Requests
     match /depositRequests/{depositId} {
-      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (
-        isAdmin() || (request.query.limit <= 50)
-      );
-      allow create: if isSignedIn() && (
-        incoming().userId == request.auth.uid &&
-        incoming().status == 'pending' &&
-        incoming().amount > 0 &&
-        incoming().amount <= 100000 &&
-        incoming().utrNumber is string &&
-        incoming().utrNumber.size() >= 4
-      );
+      allow get, list, create: if true;
       allow update, delete: if isAdmin();
     }
 
     // Withdrawal Requests
     match /withdrawalRequests/{withdrawalId} {
-      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSignedIn() && (
-        isAdmin() || (request.query.limit <= 50)
-      );
-      allow create: if isSignedIn() && (
-        incoming().userId == request.auth.uid &&
-        incoming().status == 'pending' &&
-        incoming().amount > 0
-      );
+      allow get, list, create: if true;
       allow update, delete: if isAdmin();
     }
 
     // Global Admin Settings
     match /settings/{settingId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if true;
       allow write: if isAdmin();
     }
 

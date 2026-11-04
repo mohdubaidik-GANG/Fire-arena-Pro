@@ -3,6 +3,8 @@ export interface UserProfile {
   email: string;
   ign: string; // Free Fire In-Game Name
   freeFireUid: string; // Free Fire numeric UID
+  phone?: string;
+  password?: string;
   depositBalance: number;
   winningsBalance: number;
   isBanned: boolean;
