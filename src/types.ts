@@ -16,7 +16,24 @@ export interface UserProfile {
   updatedAt: string;
 }
 
-export type TournamentCategory = 'battle_royale' | 'clash_squad_1v1' | 'clash_squad_4v4';
+export type TournamentCategory =
+  | 'all'
+  | 'FULL MAP'
+  | 'FULL MAP 2'
+  | 'CS HEAD'
+  | 'LW 1V1'
+  | 'LW 2V2'
+  | 'CS 1V1'
+  | 'CS 2V2'
+  | 'LW HEAD'
+  | 'LW LOSS'
+  | 'LW ₹10'
+  | 'NIGHT MODE'
+  | 'FREE MATCH'
+  | 'battle_royale'
+  | 'clash_squad_1v1'
+  | 'clash_squad_4v4'
+  | string;
 export type TournamentMode = 'Solo' | 'Duo' | 'Squad';
 export type TournamentStatus = 'upcoming' | 'live' | 'completed' | 'cancelled';
 
@@ -94,6 +111,7 @@ export interface WithdrawalRequest {
   userIgn: string;
   amount: number;
   method: 'upi' | 'redeem_code';
+  payoutMethod?: string;
   upiId?: string;
   deliveryEmail?: string;
   status: 'pending' | 'approved' | 'rejected';

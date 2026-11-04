@@ -49,14 +49,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-      <div className="w-full max-w-md bg-[#0f0f1a] border border-amber-500/20 rounded-2xl shadow-2xl relative overflow-hidden">
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-[#121222]">
+      <div className="w-full max-w-md bg-[#090a14] border border-red-950/80 rounded-2xl shadow-2xl relative overflow-hidden">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-red-950/60 bg-[#0e0c18]">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <div className="w-9 h-9 rounded-xl bg-red-600/10 border border-red-600/30 flex items-center justify-center text-red-400">
               <User className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white font-heading">Gamer Profile</h2>
+              <h2 className="text-base font-bold text-white font-heading">EliteX24 Gamer Profile</h2>
               <p className="text-xs text-slate-400">Free Fire MAX Identity</p>
             </div>
           </div>
@@ -70,10 +70,10 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
 
         <div className="p-5 space-y-5">
           {/* Gamer Identity Card */}
-          <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+          <div className="p-3.5 rounded-xl bg-black/50 border border-red-950/60 flex items-center justify-between">
             <div className="space-y-0.5">
               <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Free Fire UID</span>
-              <div className="text-sm font-mono text-[#00f2fe] font-bold tracking-wider">
+              <div className="text-sm font-mono text-red-400 font-bold tracking-wider">
                 {profile.freeFireUid || user?.uid || 'Not Set'}
               </div>
               <div className="text-xs text-white font-semibold">
@@ -92,31 +92,31 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
 
           {/* Quick Career Stats Grid */}
           <div className="grid grid-cols-3 gap-2">
-            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center">
+            <div className="p-2.5 rounded-xl bg-[#0d0e1a] border border-red-950/50 text-center">
               <span className="text-[9px] text-slate-400 uppercase font-mono block">Total Kills</span>
-              <span className="text-base font-bold font-mono text-[#00f2fe]">{profile.totalKills || 0}</span>
+              <span className="text-base font-bold font-mono text-red-400">{profile.totalKills || 0}</span>
             </div>
-            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center">
+            <div className="p-2.5 rounded-xl bg-[#0d0e1a] border border-red-950/50 text-center">
               <span className="text-[9px] text-slate-400 uppercase font-mono block">Matches</span>
               <span className="text-base font-bold font-mono text-amber-400">{profile.matchesPlayed || 0}</span>
             </div>
-            <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center">
+            <div className="p-2.5 rounded-xl bg-[#0d0e1a] border border-red-950/50 text-center">
               <span className="text-[9px] text-slate-400 uppercase font-mono block">Booyah</span>
               <span className="text-base font-bold font-mono text-emerald-400">{profile.tournamentsWon || 0}</span>
             </div>
           </div>
 
-          {/* Zest Account Wallet Summary */}
-          <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-[#121222] border border-amber-500/30 flex items-center justify-between gap-3">
+          {/* EliteX24 Account Wallet Summary */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-red-950/30 to-[#120a1e] border border-red-900/40 flex items-center justify-between gap-3">
             <div>
-              <span className="text-[10px] text-amber-400 uppercase font-mono font-bold tracking-wider block">
-                Zest Account Total Balance
+              <span className="text-[10px] text-red-400 uppercase font-mono font-bold tracking-wider block">
+                Total Wallet Coins
               </span>
               <div className="text-xl font-black font-mono text-white mt-0.5">
-                ₹{((profile?.depositBalance || 0) + (profile?.winningsBalance || 0)).toLocaleString('en-IN')}
+                🪙 {((profile?.depositBalance || 0) + (profile?.winningsBalance || 0)).toLocaleString('en-IN')}
               </div>
               <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                Deposit: ₹{profile?.depositBalance || 0} · Winnings: ₹{profile?.winningsBalance || 0}
+                Deposit: 🪙 {profile?.depositBalance || 0} · Winning: 🪙 {profile?.winningsBalance || 0}
               </div>
             </div>
             {onOpenWallet && (
@@ -126,7 +126,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
                   onClose();
                   onOpenWallet();
                 }}
-                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs cursor-pointer transition-colors whitespace-nowrap"
+                className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs cursor-pointer transition-colors whitespace-nowrap shadow-md shadow-red-600/30"
               >
                 Manage Wallet
               </button>
@@ -179,7 +179,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
             <button
               type="submit"
               disabled={isSaving}
-              className="w-full h-11 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+              className="w-full h-11 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
               <span>{isSaving ? 'Saving Changes...' : 'Update In-Game Details'}</span>

@@ -17,7 +17,7 @@ import { Tournament } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 interface MatchRulesModalProps {
-  tournament: Tournament | null;
+  tournament?: Tournament | null;
   isOpen: boolean;
   onClose: () => void;
   onJoinClick?: (tournament: Tournament) => void;
@@ -31,40 +31,37 @@ export const MatchRulesModal: React.FC<MatchRulesModalProps> = ({
 }) => {
   const { user } = useAuth();
 
-  if (!isOpen || !tournament) return null;
+  if (!isOpen) return null;
 
-  const currentJoined = tournament.joinedPlayers ? tournament.joinedPlayers.length : 0;
-  const isJoined = Boolean(user?.uid && tournament.joinedPlayers?.some((p) => p.uid === user.uid));
-  const isFull = currentJoined >= tournament.maxSlots;
-  const isLive = tournament.status?.toLowerCase() === 'live';
-  const isCompleted = tournament.status?.toLowerCase() === 'completed';
+  const currentJoined = tournament?.joinedPlayers ? tournament.joinedPlayers.length : 0;
+  const isJoined = Boolean(user?.uid && tournament?.joinedPlayers?.some((p) => p.uid === user.uid));
+  const isFull = tournament ? currentJoined >= tournament.maxSlots : false;
 
-  const startDate = new Date(tournament.startTime);
+  const startDate = tournament ? new Date(tournament.startTime) : new Date();
   const formattedTime = startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const formattedDate = startDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 
-  const perKill = tournament.perKillReward || (tournament as any).perKill || 0;
-  const rank1 = tournament.rank1Prize || (tournament as any).rank1 || 0;
-  const rank2 = tournament.rank2Prize || (tournament as any).rank2 || 0;
-  const pool = tournament.totalPrizePool || (tournament as any).totalPool || 0;
+  const perKill = tournament?.perKillReward || (tournament as any)?.perKill || 0;
+  const rank1 = tournament?.rank1Prize || (tournament as any)?.rank1 || 0;
+  const rank2 = tournament?.rank2Prize || (tournament as any)?.rank2 || 0;
+  const pool = tournament?.totalPrizePool || (tournament as any)?.totalPool || 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-lg bg-[#0b0e14] border border-amber-500/40 rounded-2xl shadow-2xl relative my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="w-full max-w-lg bg-[#090a14] border border-red-950/80 rounded-2xl shadow-2xl relative my-auto overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header Bar */}
-        <div className="p-4 sm:p-5 border-b border-slate-800 bg-gradient-to-r from-[#121222] via-[#0f0f1c] to-[#0c0c16] flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-red-950/60 bg-[#0e0c18] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="w-9 h-9 rounded-xl bg-red-600/10 border border-red-600/30 flex items-center justify-center text-red-400">
               <FileText className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white font-heading truncate max-w-[240px] sm:max-w-xs">
-                  {tournament.title}
+                  {tournament ? tournament.title : 'EliteX24 Esports Rules & Guidelines'}
                 </h3>
               </div>
-              <p className="text-[11px] text-amber-400 font-mono">
-                Official Free Fire MAX Esports Rules & Prize Breakdown
+              <p className="text-[11px] text-red-400 font-mono">
+                Official Free Fire MAX Fair Play & Room Regulations
               </p>
             </div>
           </div>
@@ -79,151 +76,135 @@ export const MatchRulesModal: React.FC<MatchRulesModalProps> = ({
 
         {/* Content Body */}
         <div className="p-4 sm:p-5 space-y-4 max-h-[75vh] overflow-y-auto">
-          {/* Match Overview Grid */}
-          <div>
-            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-semibold">
-              Match Overview
-            </span>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                <span className="text-[10px] text-slate-500 block">Category</span>
-                <span className="text-xs font-bold text-white uppercase">{tournament.category.replace('_', ' ')}</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                <span className="text-[10px] text-slate-500 block">Mode / Map</span>
-                <span className="text-xs font-bold text-amber-400">{tournament.mode} · {tournament.map}</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                <span className="text-[10px] text-slate-500 block">Start Time</span>
-                <span className="text-xs font-bold text-white font-mono">{formattedTime}</span>
-              </div>
-              <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800">
-                <span className="text-[10px] text-slate-500 block">Slots Booked</span>
-                <span className="text-xs font-bold text-emerald-400 font-mono">
-                  {currentJoined} / {tournament.maxSlots}
-                </span>
+          {/* Match Overview Grid (If tournament provided) */}
+          {tournament && (
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-semibold">
+                Match Overview
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="p-2.5 rounded-xl bg-black/50 border border-red-950/50">
+                  <span className="text-[10px] text-slate-500 block">Category</span>
+                  <span className="text-xs font-bold text-white uppercase">{tournament.category.replace('_', ' ')}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/50 border border-red-950/50">
+                  <span className="text-[10px] text-slate-500 block">Mode / Map</span>
+                  <span className="text-xs font-bold text-red-400">{tournament.mode} · {tournament.map}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/50 border border-red-950/50">
+                  <span className="text-[10px] text-slate-500 block">Start Time</span>
+                  <span className="text-xs font-bold text-white font-mono">{formattedTime}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-black/50 border border-red-950/50">
+                  <span className="text-[10px] text-slate-500 block">Slots Booked</span>
+                  <span className="text-xs font-bold text-emerald-400 font-mono">
+                    {currentJoined} / {tournament.maxSlots}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {/* Prize Breakdown Section */}
-          <div>
-            <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-semibold">
-              Prize Breakdown
-            </span>
-            <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-slate-900 to-orange-500/10 border border-amber-500/20 space-y-2">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          {tournament && (
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 block mb-1.5 font-semibold">
+                Coin & Prize Distribution
+              </span>
+              <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-black/50 border border-red-950/50 text-center font-mono">
                 <div>
-                  <span className="text-[10px] text-slate-400 block">Entry Fee</span>
-                  <span className="font-mono font-bold text-white text-sm">₹{tournament.entryFee}</span>
+                  <span className="text-[10px] text-slate-500 block">Total Pool</span>
+                  <span className="text-sm font-bold text-emerald-400">🪙 {pool}</span>
+                </div>
+                <div className="border-x border-slate-800">
+                  <span className="text-[10px] text-slate-500 block">Per Kill</span>
+                  <span className="text-sm font-bold text-amber-400">🪙 {perKill}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 block">Per Kill Reward</span>
-                  <span className="font-mono font-bold text-amber-400 text-sm">₹{perKill}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block">Rank 1 (Booyah)</span>
-                  <span className="font-mono font-bold text-emerald-400 text-sm">₹{rank1}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block">Rank 2 Prize</span>
-                  <span className="font-mono font-bold text-teal-400 text-sm">₹{rank2}</span>
+                  <span className="text-[10px] text-slate-500 block">Rank 1 Prize</span>
+                  <span className="text-sm font-bold text-white">🪙 {rank1}</span>
                 </div>
               </div>
-              {pool > 0 && (
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
-                  <span className="text-slate-400 font-semibold">Total Prize Pool</span>
-                  <span className="font-mono font-bold text-emerald-400 text-sm">₹{pool}</span>
-                </div>
-              )}
             </div>
-          </div>
+          )}
 
-          {/* Strict Esports Rules Box */}
-          <div>
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold">
-                Strict Esports Tournament Rules
-              </span>
-            </div>
+          {/* Strict Rules */}
+          <div className="space-y-2.5">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-red-400 block font-semibold flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5" />
+              <span>Strict Fair Play Rules (Immediate Disqualification upon Violation)</span>
+            </span>
 
-            <div className="space-y-2 bg-[#06080d] p-3.5 rounded-xl border border-slate-800 text-xs text-slate-300">
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-red-500/20 text-red-400 font-mono font-bold flex items-center justify-center shrink-0 text-[10px] mt-0.5">
+            <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
                   1
                 </span>
-                <p className="leading-relaxed">
-                  <strong className="text-red-400">Emote spamming / Hack / Script:</strong> Game ke dauran kisi bhi tarah ke hacks, config files, mod apk, ya offensive emote spamming par direct account ban aur zero refund hoga.
-                </p>
+                <span className="text-xs font-bold text-white">IGN & Free Fire UID Match</span>
               </div>
+              <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
+                Aapka In-Game Name (IGN) aur Free Fire UID bilkul match hona chahiye jo aapne profile me set kiya hai. Galat IGN wale player ko custom room se kick kar diya jayega aur entry fee refund nahi hogi.
+              </p>
+            </div>
 
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-mono font-bold flex items-center justify-center shrink-0 text-[10px] mt-0.5">
+            <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
                   2
                 </span>
-                <p className="leading-relaxed">
-                  <strong className="text-amber-400">Room ID & Password Release:</strong> Match start hone se theek 10-15 minute pehle Custom Room ID aur Password aapke match card par live show ho jayega.
-                </p>
+                <span className="text-xs font-bold text-white">Zero Tolerance for Hacks, Configs & Teaming</span>
               </div>
+              <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
+                Auto-aim, headshot config files, mod APKs, emulator bypass, ya Solo matches me teaming karna sakht mana hai. Aisa karne par account permanently ban aur balance forfeit hoga.
+              </p>
+            </div>
 
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-blue-500/20 text-blue-400 font-mono font-bold flex items-center justify-center shrink-0 text-[10px] mt-0.5">
+            <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
                   3
                 </span>
-                <p className="leading-relaxed">
-                  <strong className="text-blue-400">Result Screenshot Proof:</strong> Match khatam hote hi final kill aur rank ka clear screenshot platform support / WhatsApp par bhejna anivarya hai.
-                </p>
+                <span className="text-xs font-bold text-white">Room ID & Password Confidentiality</span>
               </div>
+              <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
+                Room ID aur Password match start se 15 minute pehle sirf registered players ke card par unlock hoga. Room pass kisi unregistered dost ke sath share karna ban ka kaaran banega.
+              </p>
+            </div>
 
-              <div className="flex items-start gap-2.5">
-                <span className="w-5 h-5 rounded-full bg-orange-500/20 text-orange-400 font-mono font-bold flex items-center justify-center shrink-0 text-[10px] mt-0.5">
+            <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
                   4
                 </span>
-                <p className="leading-relaxed">
-                  <strong className="text-orange-400">Slot Discipline:</strong> Custom room me kisi dusre player ke assigned slot par baithne par bina warning ke kick kar diya jayega.
-                </p>
+                <span className="text-xs font-bold text-white">Result Verification & Instant Coin Payouts</span>
               </div>
+              <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
+                Match khatam hone ke baad Admin room scoreboard check karke kills aur rank verify karega. Winnings coins turant aapke wallet me add ho jayenge jise aap UPI ya Play Redeem Code se nikal sakte hain.
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Footer Action Bar */}
-        <div className="p-4 sm:p-5 border-t border-slate-800 bg-[#080b12] flex items-center justify-between gap-3">
+        {/* Footer Actions */}
+        <div className="p-4 border-t border-red-950/60 bg-[#0e0c18] flex items-center justify-end gap-2.5">
           <button
-            type="button"
             onClick={onClose}
-            className="h-10 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs cursor-pointer transition-colors"
+            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
           >
-            Close Rules
+            I Understand & Accept
           </button>
 
-          {isJoined ? (
-            <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Already Registered for Match</span>
-            </div>
-          ) : isCompleted ? (
-            <span className="text-xs text-slate-500 font-semibold px-3 py-2 rounded-xl bg-slate-900 border border-slate-800">
-              Match Concluded
-            </span>
-          ) : isFull ? (
-            <span className="text-xs text-red-400 font-semibold px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/20">
-              Slots Full
-            </span>
-          ) : onJoinClick ? (
+          {tournament && !isJoined && !isFull && onJoinClick && (
             <button
-              type="button"
               onClick={() => {
                 onClose();
                 onJoinClick(tournament);
               }}
-              className="h-10 px-5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer shadow-md shadow-red-600/30"
             >
-              <Zap className="w-4 h-4 fill-black" />
-              <span>Join Match · ₹{tournament.entryFee}</span>
+              Join Match · 🪙 {tournament.entryFee}
             </button>
-          ) : null}
+          )}
         </div>
       </div>
     </div>

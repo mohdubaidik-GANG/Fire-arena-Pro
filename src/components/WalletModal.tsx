@@ -279,23 +279,23 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-3xl bg-[#0a0a14] border border-amber-500/30 rounded-2xl shadow-2xl relative my-auto overflow-hidden">
+      <div className="w-full max-w-3xl bg-[#090a14] border border-red-950/80 rounded-2xl shadow-2xl relative my-auto overflow-hidden">
         {/* Top Header Bar */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-[#0f0f1e]">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-red-950/60 bg-[#0e0c18]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-red-600 to-rose-700 flex items-center justify-center text-white shadow-md shadow-red-600/30">
               <Coins className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white font-heading">
-                  Zest Esports Cash Account
+                  EliteX24 Esports Wallet
                 </h2>
-                <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-mono font-bold uppercase">
+                <span className="px-2 py-0.5 rounded bg-red-600/20 text-red-400 border border-red-600/30 text-[10px] font-mono font-bold uppercase">
                   Dual Wallet
                 </span>
               </div>
-              <p className="text-xs text-slate-400">Deposit, Winnings & Tournament Career Records</p>
+              <p className="text-xs text-slate-400">Add Coins, Redeem Winnings & Transaction Records</p>
             </div>
           </div>
           <button
@@ -307,41 +307,41 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         </div>
 
         {/* Modal Top Navigation Tabs */}
-        <div className="flex items-center border-b border-slate-800 bg-[#0d0d1a] overflow-x-auto">
+        <div className="flex items-center border-b border-red-950/60 bg-[#07070f] overflow-x-auto">
           <button
             onClick={() => setActiveTab('overview')}
             className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
               activeTab === 'overview'
-                ? 'border-amber-500 text-amber-400 bg-amber-500/5'
+                ? 'border-red-500 text-red-400 bg-red-950/20'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <Coins className="w-4 h-4" />
-            <span>Wallet & Stats</span>
+            <span>Wallet & Balance</span>
           </button>
 
           <button
             onClick={() => setActiveTab('deposit')}
             className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
               activeTab === 'deposit'
-                ? 'border-amber-500 text-amber-400 bg-amber-500/5'
+                ? 'border-red-500 text-red-400 bg-red-950/20'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <ArrowDownCircle className="w-4 h-4" />
-            <span>Add Cash (UPI QR)</span>
+            <span>Add Coins (UPI)</span>
           </button>
 
           <button
             onClick={() => setActiveTab('withdraw')}
             className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
               activeTab === 'withdraw'
-                ? 'border-emerald-500 text-emerald-400 bg-emerald-500/5'
+                ? 'border-red-500 text-red-400 bg-red-950/20'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
             <ArrowUpRight className="w-4 h-4" />
-            <span>Withdraw Winnings</span>
+            <span>Redeem Coins</span>
           </button>
         </div>
 

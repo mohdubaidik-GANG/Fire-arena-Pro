@@ -62,6 +62,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // Tournaments State
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [adminCategoryFilter, setAdminCategoryFilter] = useState<string>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingRoomTour, setEditingRoomTour] = useState<Tournament | null>(null);
   const [declaringResultsTour, setDeclaringResultsTour] = useState<Tournament | null>(null);
@@ -479,29 +480,52 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     );
   });
 
+  const ADMIN_CATEGORIES = [
+    'ALL',
+    'FULL MAP',
+    'FULL MAP 2',
+    'CS HEAD',
+    'LW 1V1',
+    'LW 2V2',
+    'CS 1V1',
+    'CS 2V2',
+    'LW HEAD',
+    'LW LOSS',
+    'LW ₹10',
+    'NIGHT MODE',
+    'FREE MATCH'
+  ];
+
+  const displayedTournaments = tournaments.filter((t) => {
+    if (adminCategoryFilter === 'ALL' || adminCategoryFilter === 'all') return true;
+    const cat = String(t.category || '').toUpperCase().trim();
+    const target = adminCategoryFilter.toUpperCase().trim();
+    return cat === target || cat.replace(/_/g, ' ') === target || cat.includes(target) || target.includes(cat);
+  });
+
   const pendingDepositsCount = deposits.filter((d) => d.status === 'pending').length;
   const pendingWithdrawalsCount = withdrawals.filter((w) => w.status === 'pending').length;
 
   return (
-    <div className="min-h-screen bg-[#07070b] text-slate-100 pb-16">
+    <div className="min-h-screen bg-[#000000] text-slate-100 pb-16">
       {/* Admin Top Navigation */}
-      <header className="sticky top-0 z-30 bg-[#0c0c16]/95 backdrop-blur-md border-b border-amber-500/30 px-4 sm:px-6 py-3">
+      <header className="sticky top-0 z-30 bg-[#06070a]/95 backdrop-blur-md border-b border-red-950/80 px-4 sm:px-6 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-red-600 flex items-center justify-center shadow-lg shadow-amber-500/20 text-black">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-rose-700 flex items-center justify-center shadow-lg shadow-red-950/60 text-white border border-red-500/30">
               <Shield className="w-5 h-5 stroke-[2.5]" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold font-heading text-white tracking-tight">
-                  FireArena Command Center
+                <h1 className="text-base sm:text-lg font-black font-heading text-white tracking-tight uppercase">
+                  ELITEX24 <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-amber-400">COMMAND CENTER</span>
                 </h1>
-                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[10px] font-mono font-bold uppercase">
+                <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/40 text-[10px] font-mono font-bold uppercase tracking-wider">
                   Super Admin
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-mono">
-                Operator: <span className="text-amber-400">{user?.email}</span>
+                Operator: <span className="text-red-400 font-bold">{user?.email || profile?.freeFireUid || '15524834348'}</span>
               </p>
             </div>
           </div>
@@ -509,15 +533,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="flex items-center gap-2">
             <a
               href="/"
-              className="h-9 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              className="h-9 px-3 rounded-xl bg-[#090a14] hover:bg-red-950/40 text-slate-200 border border-red-950/80 text-xs font-bold flex items-center gap-1.5 transition-colors"
             >
-              <Flame className="w-4 h-4 text-orange-500" />
+              <Flame className="w-4 h-4 text-red-500" />
               <span className="hidden sm:inline">Gamer Arena</span>
             </a>
 
             <button
               onClick={onLogout || logout}
-              className="h-9 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="h-9 px-3 rounded-xl bg-red-600/10 hover:bg-red-600/20 text-red-400 border border-red-600/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Sign Out to Login Screen"
             >
               <LogOut className="w-3.5 h-3.5" />
@@ -530,13 +554,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       {/* Main Admin Container */}
       <main className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
         {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-slate-800/80">
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-red-950/80 no-scrollbar">
           <button
             onClick={() => setActiveTab('tournaments')}
-            className={`h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`h-10 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'tournaments'
-                ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-lg shadow-red-950/60 border border-red-500'
+                : 'bg-[#090a12] border border-red-950/60 text-slate-400 hover:text-white'
             }`}
           >
             <Trophy className="w-4 h-4" />
@@ -545,16 +569,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           <button
             onClick={() => setActiveTab('deposits')}
-            className={`h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`h-10 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'deposits'
-                ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-lg shadow-red-950/60 border border-red-500'
+                : 'bg-[#090a12] border border-red-950/60 text-slate-400 hover:text-white'
             }`}
           >
             <Wallet className="w-4 h-4" />
             <span>Deposit Requests</span>
             {pendingDepositsCount > 0 && (
-              <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-mono">
+              <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-mono font-bold">
                 {pendingDepositsCount}
               </span>
             )}
@@ -562,10 +586,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           <button
             onClick={() => setActiveTab('withdrawals')}
-            className={`h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`h-10 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'withdrawals'
-                ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-lg shadow-red-950/60 border border-red-500'
+                : 'bg-[#090a12] border border-red-950/60 text-slate-400 hover:text-white'
             }`}
           >
             <DollarSign className="w-4 h-4" />
@@ -579,10 +603,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           <button
             onClick={() => setActiveTab('users')}
-            className={`h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`h-10 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'users'
-                ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-lg shadow-red-950/60 border border-red-500'
+                : 'bg-[#090a12] border border-red-950/60 text-slate-400 hover:text-white'
             }`}
           >
             <Users className="w-4 h-4" />
@@ -591,10 +615,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           <button
             onClick={() => setActiveTab('settings')}
-            className={`h-10 px-4 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`h-10 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'settings'
-                ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-lg shadow-red-950/60 border border-red-500'
+                : 'bg-[#090a12] border border-red-950/60 text-slate-400 hover:text-white'
             }`}
           >
             <Settings className="w-4 h-4" />
@@ -607,36 +631,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           <div className="space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-xl font-bold font-heading text-white">Tournament Match Engine</h2>
+                <h2 className="text-xl font-black font-heading text-white uppercase tracking-wide">
+                  EliteX24 Match Engine
+                </h2>
                 <p className="text-xs text-slate-400">
-                  Manage custom rooms, unlock real-time credentials, and auto-disburse kill & rank prizes.
+                  Manage custom rooms, unlock real-time credentials, and auto-disburse kill & rank prizes across 12 game modes.
                 </p>
               </div>
 
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="h-10 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs flex items-center gap-2 shadow-md shadow-amber-500/20 transition-all cursor-pointer shrink-0"
+                className="h-10 px-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-red-950/50 transition-all cursor-pointer shrink-0 border border-red-500/40"
               >
                 <PlusCircle className="w-4 h-4 stroke-[2.5]" />
-                <span>Create New Tournament</span>
+                <span>Create Match</span>
               </button>
             </div>
 
-            {tournaments.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-slate-900/40 border border-slate-800 text-center">
-                <Trophy className="w-10 h-10 text-slate-600 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-slate-300">No Tournaments Created Yet</p>
-                <p className="text-xs text-slate-500 mt-1 mb-4">Launch your first Free Fire MAX match room</p>
+            {/* Category Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-2 border-b border-red-950/50 no-scrollbar">
+              {ADMIN_CATEGORIES.map((cat) => {
+                const isActive = (adminCategoryFilter === 'all' && cat === 'ALL') || adminCategoryFilter === cat;
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => setAdminCategoryFilter(cat === 'ALL' ? 'all' : cat)}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 border ${
+                      isActive
+                        ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white border-red-500 shadow-md shadow-red-900/40'
+                        : 'bg-[#090a12] text-slate-400 border-red-950/60 hover:text-white hover:border-red-900/50'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+
+            {displayedTournaments.length === 0 ? (
+              <div className="p-8 rounded-2xl bg-[#090a12] border border-red-950/70 text-center">
+                <Trophy className="w-10 h-10 text-red-700 mx-auto mb-2" />
+                <p className="text-sm font-bold text-slate-200 uppercase tracking-wider">No Matches in this Category</p>
+                <p className="text-xs text-slate-500 mt-1 mb-4">Launch a new Free Fire MAX match room or switch filters</p>
                 <button
                   onClick={() => setShowCreateModal(true)}
-                  className="px-4 py-2 rounded-xl bg-amber-500 text-black text-xs font-bold"
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs font-bold uppercase tracking-wider"
                 >
-                  Create Tournament Now
+                  Create Match Now
                 </button>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {tournaments.map((t) => (
+                {displayedTournaments.map((t) => (
                   <div
                     key={t.id}
                     className="p-4 rounded-2xl bg-[#0f0f1c] border border-slate-800 flex flex-col justify-between space-y-4"
@@ -1403,39 +1449,55 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="w-full max-w-lg bg-[#0f0f1c] border border-amber-500/30 rounded-2xl p-5 sm:p-6 shadow-2xl relative my-auto">
-        <h3 className="text-base font-bold text-white font-heading mb-4">Create New Tournament Match</h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
+      <div className="w-full max-w-lg bg-[#090a14] border border-red-950/80 rounded-2xl p-5 sm:p-6 shadow-2xl relative my-auto">
+        <h3 className="text-base font-black text-white font-heading uppercase tracking-wide mb-4">
+          Create New EliteX24 Match
+        </h3>
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>
-            <label className="block font-semibold text-slate-300 mb-1">Match Title</label>
+            <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">Match Title</label>
             <input
               type="text"
               value={matchTitle}
               onChange={(e) => setMatchTitle(e.target.value)}
               placeholder="e.g. Bermuda Mega Battle Royale"
               required
-              className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500"
+              className="w-full h-10 px-3 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 focus:border-red-500"
             />
           </div>
 
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="block font-semibold text-slate-300 mb-1">Category</label>
+              <label className="block font-bold text-slate-300 uppercase tracking-wider mb-1">Category</label>
               <select
                 value={category}
                 onChange={(e) => {
                   const cat = e.target.value as TournamentCategory;
                   setCategory(cat);
-                  if (cat === 'clash_squad_1v1') setMaxSlots('2');
-                  else if (cat === 'clash_squad_4v4') setMaxSlots('8');
+                  const str = String(cat).toUpperCase();
+                  if (str.includes('1V1') || str.includes('1v1')) setMaxSlots('2');
+                  else if (str.includes('2V2') || str.includes('2v2')) setMaxSlots('4');
+                  else if (str.includes('CS')) setMaxSlots('8');
                   else setMaxSlots('48');
                 }}
-                className="w-full h-10 px-2 rounded-xl bg-slate-900 border border-slate-800 text-white"
+                className="w-full h-10 px-2 rounded-xl bg-[#06070a] border border-red-950/80 text-white font-bold"
               >
+                <option value="FULL MAP">FULL MAP</option>
+                <option value="FULL MAP 2">FULL MAP 2</option>
+                <option value="CS HEAD">CS HEAD</option>
+                <option value="LW 1V1">LW 1V1</option>
+                <option value="LW 2V2">LW 2V2</option>
+                <option value="CS 1V1">CS 1V1</option>
+                <option value="CS 2V2">CS 2V2</option>
+                <option value="LW HEAD">LW HEAD</option>
+                <option value="LW LOSS">LW LOSS</option>
+                <option value="LW ₹10">LW ₹10</option>
+                <option value="NIGHT MODE">NIGHT MODE</option>
+                <option value="FREE MATCH">FREE MATCH</option>
                 <option value="battle_royale">Battle Royale</option>
-                <option value="clash_squad_1v1">CS 1v1</option>
-                <option value="clash_squad_4v4">CS 4v4</option>
+                <option value="clash_squad_1v1">CS 1v1 (Classic)</option>
+                <option value="clash_squad_4v4">CS 4v4 (Classic)</option>
               </select>
             </div>
 
@@ -1559,9 +1621,9 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
             <button
               type="submit"
               disabled={creating}
-              className="px-5 py-2 rounded-xl bg-amber-500 font-bold text-black hover:bg-amber-400 disabled:opacity-50 transition-colors cursor-pointer"
+              className="px-5 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs uppercase tracking-wider disabled:opacity-50 transition-colors cursor-pointer shadow-lg shadow-red-950/60"
             >
-              {creating ? 'Creating...' : 'Launch Tournament'}
+              {creating ? 'Creating...' : 'Launch Match'}
             </button>
           </div>
         </form>

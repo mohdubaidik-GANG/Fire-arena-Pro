@@ -36,7 +36,6 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
   const [copiedId, setCopiedId] = useState(false);
   const [copiedPass, setCopiedPass] = useState(false);
 
-  // Requirement 2: Har match card par joined players ka number direct Firestore document ke array length se count hona chahiye
   const currentJoined = tournament.joinedPlayers ? tournament.joinedPlayers.length : 0;
   const isRegisteredInList = Boolean(user?.uid && tournament.joinedPlayers?.some((p) => p.uid === user.uid));
   const isJoined = Boolean(userRegistration || isRegisteredInList);
@@ -63,83 +62,73 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
   };
 
   const getCategoryLabel = (cat: string) => {
-    switch (cat) {
-      case 'clash_squad_1v1':
-        return 'CS 1v1';
-      case 'clash_squad_4v4':
-        return 'CS 4v4';
-      default:
-        return 'Battle Royale';
-    }
+    return cat ? cat.replace(/_/g, ' ').toUpperCase() : 'FULL MAP';
   };
 
   const slotsPercent = Math.min(100, Math.round((currentJoined / tournament.maxSlots) * 100));
 
-  // Format start time
   const startDate = new Date(tournament.startTime);
   const formattedTime = startDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const formattedDate = startDate.toLocaleDateString([], { month: 'short', day: 'numeric' });
 
   return (
-    <div className="bg-[#0e0e18] border border-slate-800 hover:border-amber-500/30 rounded-2xl overflow-hidden shadow-lg transition-all flex flex-col justify-between">
+    <div className="bg-[#090a12] border border-red-950/70 hover:border-red-600/50 rounded-2xl overflow-hidden shadow-xl hover:shadow-red-600/10 transition-all flex flex-col justify-between group">
       {/* Top Banner / Match Title */}
-      <div className="p-4 sm:p-5 border-b border-slate-800/80 bg-gradient-to-r from-[#121222] via-[#0f0f1c] to-[#0c0c16]">
+      <div className="p-4 sm:p-5 border-b border-red-950/50 bg-gradient-to-r from-[#140a16] via-[#0d0914] to-[#07070d]">
         <div className="flex items-center justify-between gap-2 mb-2">
-          {/* Category & Mode Info */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-400">
-            <span className="font-semibold text-amber-400 uppercase tracking-wide">
+          {/* Category Badge & Mode Info */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="px-2 py-0.5 rounded bg-gradient-to-r from-red-600 to-rose-700 text-white font-heading font-black text-[10px] uppercase tracking-wider shadow-sm shadow-red-600/30">
               {getCategoryLabel(tournament.category)}
             </span>
-            <span aria-hidden="true">·</span>
-            <span>{tournament.mode}</span>
-            <span aria-hidden="true">·</span>
-            <span className="text-slate-300">{tournament.map}</span>
+            <span className="text-[11px] font-mono text-slate-400">· {tournament.mode}</span>
+            <span className="text-[11px] font-mono text-slate-400">· {tournament.map}</span>
           </div>
 
           {/* Status Badge */}
           {isLive && (
-            <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 animate-pulse">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500" /> Live Match
+            <span className="px-2 py-0.5 rounded-full bg-red-600/20 text-red-400 border border-red-500/40 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 animate-pulse">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" /> LIVE MATCH
             </span>
           )}
           {isCompleted && (
-            <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-mono uppercase">
-              Completed
+            <span className="px-2 py-0.5 rounded-full bg-slate-900 text-slate-400 border border-slate-800 text-[10px] font-mono uppercase">
+              COMPLETED
             </span>
           )}
           {!isLive && !isCompleted && (
-            <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px] font-mono flex items-center gap-1">
-              <Clock className="w-3 h-3" /> {formattedDate}, {formattedTime}
+            <span className="px-2.5 py-0.5 rounded-full bg-red-950/40 text-red-300 border border-red-900/40 text-[10px] font-mono flex items-center gap-1">
+              <Clock className="w-3 h-3 text-red-400" /> {formattedDate}, {formattedTime}
             </span>
           )}
         </div>
 
-        <h3 className="text-base sm:text-lg font-bold text-white font-heading tracking-tight">
+        <h3 className="text-base sm:text-lg font-bold text-white font-heading tracking-tight group-hover:text-red-400 transition-colors">
           {tournament.title}
         </h3>
       </div>
 
       {/* Middle Specs & Prize Pool Grid */}
       <div className="p-4 sm:p-5 space-y-4 flex-1">
-        <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-slate-900/60 border border-slate-800/80 text-center">
+        <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-[#0e0f1c]/90 border border-red-950/60 text-center">
           <div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Prize Pool</span>
-            <span className="text-sm sm:text-base font-extrabold font-mono text-emerald-400 tabular-nums">
-              ₹{tournament.totalPrizePool}
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Prize Pool</span>
+            <span className="text-sm sm:text-base font-black font-mono text-emerald-400 tabular-nums">
+              🪙 {tournament.totalPrizePool}
             </span>
           </div>
 
-          <div className="border-x border-slate-800">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">Per Kill</span>
-            <span className="text-sm sm:text-base font-extrabold font-mono text-amber-400 tabular-nums">
-              ₹{tournament.perKillReward}
+          <div className="border-x border-slate-800/80">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Per Kill</span>
+            <span className="text-sm sm:text-base font-black font-mono text-amber-400 tabular-nums">
+              🪙 {tournament.perKillReward}
             </span>
           </div>
 
           <div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block">1st Prize</span>
-            <span className="text-sm sm:text-base font-extrabold font-mono text-white tabular-nums">
-              ₹{tournament.rank1Prize}
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">Rank 1 Prize</span>
+            <span className="text-sm sm:text-base font-black font-mono text-white tabular-nums">
+              🪙 {tournament.rank1Prize}
             </span>
           </div>
         </div>
@@ -148,18 +137,18 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
         <div>
           <div className="flex items-center justify-between text-xs mb-1.5">
             <span className="text-slate-400 flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-slate-500" />
+              <Users className="w-3.5 h-3.5 text-red-400" />
               <span>Registered Slots</span>
             </span>
-            <span className="font-mono font-semibold text-slate-200">
+            <span className="font-mono font-bold text-slate-200">
               {currentJoined} / {tournament.maxSlots} Joined
             </span>
           </div>
 
-          <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+          <div className="w-full h-1.5 rounded-full bg-slate-900 border border-slate-800 overflow-hidden">
             <div
               className={`h-full transition-all duration-500 ${
-                slotsPercent >= 90 ? 'bg-red-500' : slotsPercent >= 60 ? 'bg-amber-500' : 'bg-emerald-500'
+                slotsPercent >= 90 ? 'bg-red-500' : slotsPercent >= 60 ? 'bg-amber-500' : 'bg-rose-500'
               }`}
               style={{ width: `${slotsPercent}%` }}
             />
@@ -168,23 +157,23 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
 
         {/* ================= ROOM CREDENTIALS UNLOCK PANEL ================= */}
         {isJoined ? (
-          <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+          <div className="p-3.5 rounded-xl bg-red-950/25 border border-red-600/30 space-y-2">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
-                <ShieldCheck className="w-4 h-4" />
-                <span>Slot #{userRegistration?.slotNumber} Reserved</span>
+              <div className="flex items-center gap-1.5 text-xs font-bold text-red-400">
+                <ShieldCheck className="w-4 h-4 text-red-400" />
+                <span>Slot #{userRegistration?.slotNumber || 1} Reserved</span>
               </div>
-              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono text-[10px] font-bold">
                 Registered
               </span>
             </div>
 
             {hasRoomCredentials ? (
-              <div className="pt-2 border-t border-amber-500/20 space-y-2">
+              <div className="pt-2 border-t border-red-950/50 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-300 font-mono font-medium">Room ID:</span>
                   <div className="flex items-center gap-2">
-                    <code className="px-2.5 py-1 bg-black/80 rounded-lg text-amber-400 font-mono font-bold text-xs select-all border border-amber-500/30">
+                    <code className="px-2.5 py-1 bg-black/90 rounded-lg text-amber-400 font-mono font-bold text-xs select-all border border-red-500/40 shadow-inner">
                       {tournament.roomId}
                     </code>
                     <button
@@ -200,7 +189,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-300 font-mono font-medium">Password:</span>
                   <div className="flex items-center gap-2">
-                    <code className="px-2.5 py-1 bg-black/80 rounded-lg text-amber-400 font-mono font-bold text-xs select-all border border-amber-500/30">
+                    <code className="px-2.5 py-1 bg-black/90 rounded-lg text-amber-400 font-mono font-bold text-xs select-all border border-red-500/40 shadow-inner">
                       {tournament.roomPassword}
                     </code>
                     <button
@@ -213,36 +202,36 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
                   </div>
                 </div>
 
-                <p className="text-[10px] text-amber-300/80 pt-1 font-mono">
+                <p className="text-[10px] text-red-300/80 pt-1 font-mono">
                   Room credentials are unlocked! Open Free Fire MAX → Custom → Join Room.
                 </p>
               </div>
             ) : (
-              <div className="pt-2 border-t border-amber-500/20">
-                <div className="p-2.5 rounded-xl bg-black/40 border border-amber-500/20 text-xs flex items-start gap-2">
-                  <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 animate-pulse" />
+              <div className="pt-2 border-t border-red-950/50">
+                <div className="p-2.5 rounded-xl bg-black/50 border border-red-950/60 text-xs flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-red-400 shrink-0 mt-0.5 animate-pulse" />
                   <div>
                     <p className="font-semibold text-white">Room ID & Password will be shared 15 mins before match</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Admin will manually publish the custom room details here once created in Free Fire MAX.</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Admin will publish credentials once created inside Free Fire MAX.</p>
                   </div>
                 </div>
               </div>
             )}
           </div>
         ) : (
-          <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+          <div className="p-2.5 rounded-xl bg-slate-900/40 border border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
             <span className="flex items-center gap-1.5">
               <Lock className="w-3.5 h-3.5 text-slate-500" />
               <span>Room ID & Pass:</span>
             </span>
-            <span className="text-[11px] text-slate-500 font-mono">Room ID & Password will be shared 15 mins before match</span>
+            <span className="text-[10px] text-slate-500 font-mono">Unlocks 15 mins before match start</span>
           </div>
         )}
 
         {/* If Results declared */}
         {tournament.results && tournament.results.winners && (
-          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1.5">
-            <span className="text-[10px] uppercase font-semibold text-amber-400 block tracking-wider">
+          <div className="p-3 rounded-xl bg-[#0e0f1c] border border-red-950/60 text-xs space-y-1.5">
+            <span className="text-[10px] uppercase font-bold text-amber-400 block tracking-wider font-heading">
               Match Champions (Booyah)
             </span>
             {tournament.results.winners.slice(0, 3).map((w) => (
@@ -250,7 +239,7 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
                 <span className="text-slate-300">
                   #{w.rank} {w.ign} ({w.kills} Kills)
                 </span>
-                <span className="text-emerald-400 font-bold">+₹{w.prizeWon}</span>
+                <span className="text-emerald-400 font-bold">+🪙 {w.prizeWon}</span>
               </div>
             ))}
           </div>
@@ -262,19 +251,19 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
         <button
           type="button"
           onClick={() => onViewDetails?.(tournament)}
-          className="w-full h-8 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-500/30 text-slate-300 hover:text-amber-400 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          className="w-full h-8 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 hover:border-red-900/60 text-slate-300 hover:text-red-400 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
         >
-          <FileText className="w-3.5 h-3.5 text-amber-400" />
-          <span>View Rules & Details</span>
+          <FileText className="w-3.5 h-3.5 text-red-400" />
+          <span>View Rules & Match Details</span>
         </button>
 
         {isJoined ? (
           <button
             disabled
-            className="w-full h-11 rounded-xl bg-slate-800 border border-amber-500/30 text-amber-400 font-bold text-xs flex items-center justify-center gap-2 cursor-default"
+            className="w-full h-11 rounded-xl bg-slate-900 border border-red-500/40 text-red-400 font-bold text-xs flex items-center justify-center gap-2 cursor-default shadow-sm"
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>Already Registered (Slot #{userRegistration?.slotNumber})</span>
+            <span>Already Registered (Slot #{userRegistration?.slotNumber || 1})</span>
           </button>
         ) : isCompleted ? (
           <button
@@ -303,10 +292,10 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
               }
               onJoinClick(tournament);
             }}
-            className="w-full h-11 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer"
+            className="w-full h-11 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 active:scale-[0.98] transition-all cursor-pointer tracking-wider uppercase"
           >
-            <Zap className="w-4 h-4 fill-black" />
-            <span>Join Match · Entry ₹{tournament.entryFee}</span>
+            <Zap className="w-4 h-4 fill-white" />
+            <span>Join Match · 🪙 {tournament.entryFee} Coins</span>
           </button>
         )}
       </div>
