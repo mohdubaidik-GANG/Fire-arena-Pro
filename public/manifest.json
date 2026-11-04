@@ -1,13 +1,17 @@
 {
   "name": "Fire Arena Pro",
   "short_name": "FireArena",
-  "description": "Free Fire Esports Tournament Platform",
+  "id": "/?source=pwa",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#0b0e14",
   "theme_color": "#f59e0b",
-  "orientation": "portrait",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["sports", "games", "entertainment"],
+  "description": "Free Fire Esports Tournament Platform",
   "icons": [
     {
       "src": "https://cdn-icons-png.flaticon.com/512/808/808665.png",
