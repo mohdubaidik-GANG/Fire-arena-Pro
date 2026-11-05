@@ -45,7 +45,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
   // Settings from Admin
   const [adminSettings, setAdminSettings] = useState<AdminSettings>({
-    upiId: 'firearenapay@okaxis',
+    upiId: '9005939633@ptyes',
     upiName: 'FireArena MAX Esports',
     qrCodeUrl: '',
     supportWhatsapp: '919876543210',
@@ -94,7 +94,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       doc(db, 'settings', 'global'),
       (docSnap) => {
         if (docSnap.exists()) {
-          setAdminSettings(docSnap.data() as AdminSettings);
+          const data = docSnap.data() as AdminSettings;
+          if (data.upiId) {
+            try {
+              data.upiId = decodeURIComponent(data.upiId).replace(/%40/gi, '@').trim();
+            } catch {
+              data.upiId = data.upiId.replace(/%40/gi, '@').trim();
+            }
+          }
+          setAdminSettings(data);
         }
       },
       (error) => {
@@ -111,16 +119,19 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
   const currentEffectiveDepositAmount = customAmount ? parseFloat(customAmount) || 0 : depositAmount;
 
-  // Generate dynamic UPI deep link
+  // Clean raw Payee VPA without %40 encoding
+  const cleanPayeeVpa = (adminSettings.upiId || '9005939633@ptyes').replace(/%40/gi, '@').trim();
+
+  // Generate dynamic UPI deep link with clean VPA and raw '@'
   const currentUpiUri = generateUpiUrl({
-    pa: adminSettings.upiId,
-    pn: adminSettings.upiName,
+    pa: cleanPayeeVpa,
+    pn: adminSettings.upiName || 'FireArena MAX Esports',
     am: currentEffectiveDepositAmount > 0 ? currentEffectiveDepositAmount : undefined,
-    tn: `Deposit by ${profile?.ign || user?.email || 'Player'}`,
+    tn: 'AddCoins',
   });
 
   const handleCopyUpi = () => {
-    navigator.clipboard.writeText(adminSettings.upiId);
+    navigator.clipboard.writeText(cleanPayeeVpa);
     setCopiedUpi(true);
     setTimeout(() => setCopiedUpi(false), 2000);
   };
@@ -443,29 +454,37 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 {/* Direct UPI ID with Copy Button */}
                 <div className="w-full max-w-sm space-y-1.5">
                   <span className="text-[11px] text-slate-400 font-mono">Official Admin UPI ID:</span>
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/60 border border-red-950/80">
                     <code className="text-xs font-mono font-bold text-white tracking-wide truncate">
-                      {adminSettings.upiId}
+                      {cleanPayeeVpa}
                     </code>
                     <button
                       type="button"
                       onClick={handleCopyUpi}
-                      className="ml-2 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-mono flex items-center gap-1 cursor-pointer"
+                      className="ml-2 px-2.5 py-1 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/30 text-xs font-mono font-bold flex items-center gap-1 cursor-pointer transition-colors"
                     >
-                      {copiedUpi ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{copiedUpi ? 'Copied' : 'Copy'}</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Mobile Pay Link */}
+                {/* Auto-generated UPI Intent Button */}
                 <a
                   href={currentUpiUri}
-                  className="sm:hidden w-full max-w-sm h-11 rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer"
+                  onClick={(e) => {
+                    // Direct intent invocation for mobile APK / WebView browsers
+                    try {
+                      window.location.href = currentUpiUri;
+                    } catch (err) {
+                      console.warn('UPI direct intent note:', err);
+                    }
+                  }}
+                  className="w-full max-w-sm h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 cursor-pointer active:scale-[0.98] transition-all"
                 >
-                  <Smartphone className="w-4 h-4 text-amber-400" />
-                  <span>Tap to Pay with Installed UPI App</span>
-                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                  <Smartphone className="w-4 h-4 text-white" />
+                  <span>Pay ₹{currentEffectiveDepositAmount} via UPI App</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-white/80" />
                 </a>
               </div>
 

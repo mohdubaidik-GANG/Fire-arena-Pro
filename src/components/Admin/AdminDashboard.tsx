@@ -83,7 +83,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // Admin Settings State
   const [settings, setSettings] = useState<AdminSettings>({
-    upiId: 'firearenapay@okaxis',
+    upiId: '9005939633@ptyes',
     upiName: 'FireArena MAX Esports',
     qrCodeUrl: '',
     supportWhatsapp: '919876543210',
@@ -215,7 +215,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       doc(db, 'settings', 'global'),
       (docSnap) => {
         if (docSnap.exists()) {
-          setSettings(docSnap.data() as AdminSettings);
+          const data = docSnap.data() as AdminSettings;
+          if (data.upiId) {
+            try {
+              data.upiId = decodeURIComponent(data.upiId).replace(/%40/gi, '@').trim();
+            } catch {
+              data.upiId = data.upiId.replace(/%40/gi, '@').trim();
+            }
+          }
+          setSettings(data);
         }
       },
       (error) => {
@@ -455,10 +463,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const cleanUpiId = (settings.upiId || '').replace(/%40/gi, '@').trim();
       await setDoc(doc(db, 'settings', 'global'), {
         ...settings,
+        upiId: cleanUpiId,
         updatedAt: new Date().toISOString(),
       });
+      setSettings((prev) => ({ ...prev, upiId: cleanUpiId }));
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
     } catch (err: unknown) {
@@ -1205,9 +1216,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 <input
                   type="text"
                   value={settings.upiId}
-                  onChange={(e) => setSettings({ ...settings, upiId: e.target.value.trim() })}
+                  onChange={(e) => setSettings({ ...settings, upiId: e.target.value.replace(/%40/gi, '@').trim() })}
                   required
-                  placeholder="e.g. firearenapay@okaxis"
+                  placeholder="e.g. 9005939633@ptyes"
                   className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-sm focus:outline-none focus:border-amber-500"
                 />
                 <p className="text-[11px] text-slate-500 mt-1">Players will pay into this handle for deposits.</p>
