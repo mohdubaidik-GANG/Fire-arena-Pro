@@ -36,21 +36,18 @@ service cloud.firestore {
     // Tournaments Collection
     match /tournaments/{tournamentId} {
       allow get, list: if true;
-      allow create, delete: if isAdmin();
-      allow update: if true;
+      allow create, update, delete: if true;
 
       match /registrations/{registrationId} {
         allow get, list: if true;
-        allow create, update: if true;
-        allow delete: if isAdmin();
+        allow create, update, delete: if true;
       }
     }
 
     // Matches Collection
     match /matches/{matchId} {
       allow get, list: if true;
-      allow create, delete: if isAdmin();
-      allow update: if true;
+      allow create, update, delete: if true;
     }
 
     // Deposit Requests

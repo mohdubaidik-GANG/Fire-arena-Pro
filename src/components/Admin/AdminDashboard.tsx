@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Shield,
   Trophy,
@@ -37,7 +37,9 @@ import {
   addDoc,
   deleteDoc,
   onSnapshot,
-  runTransaction
+  runTransaction,
+  writeBatch,
+  increment
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -93,29 +95,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   });
   const [settingsSaved, setSettingsSaved] = useState(false);
 
+  // State for match deletion modal and admin feedback toasts
+  const [matchToDelete, setMatchToDelete] = useState<{ id: string; title?: string } | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
+  const [adminToast, setAdminToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    setAdminToast({ message, type });
+    setTimeout(() => {
+      setAdminToast((curr) => (curr?.message === message ? null : curr));
+    }, 4000);
+  }, []);
+
+  // Internal persistent map refs for real-time match synchronization
+  const tourneysMapRef = useRef<Map<string, Tournament>>(new Map());
+  const matchesMapRef = useRef<Map<string, Tournament>>(new Map());
+
+  const updateTournamentsState = useCallback(() => {
+    const mergedMap = new Map<string, Tournament>();
+    tourneysMapRef.current.forEach((val, key) => mergedMap.set(key, val));
+    matchesMapRef.current.forEach((val, key) => {
+      const existing = mergedMap.get(key);
+      mergedMap.set(key, { ...existing, ...val });
+    });
+    const list = Array.from(mergedMap.values());
+    list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+    setTournaments(list);
+  }, []);
+
   // Real-time Listeners for all collections
   useEffect(() => {
-    // 1. Tournaments and Matches Listener (Unified)
-    const tourneysMap = new Map<string, Tournament>();
-    const updateTournamentsState = () => {
-      const list = Array.from(tourneysMap.values());
-      list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-      setTournaments(list);
-    };
-
+    // 1. Tournaments and Matches Listener (Unified with proper deletion sync)
     const unsubTournaments = onSnapshot(
       collection(db, 'tournaments'),
       (snapshot) => {
+        tourneysMapRef.current.clear();
         snapshot.docs.forEach((d) => {
           const data = d.data();
-          const existing = tourneysMap.get(d.id);
+          const existing = tourneysMapRef.current.get(d.id);
           const joinedList = Array.isArray(data.joinedPlayers) && data.joinedPlayers.length > 0
             ? data.joinedPlayers
             : Array.isArray(existing?.joinedPlayers) && existing.joinedPlayers.length > 0
             ? existing.joinedPlayers
             : Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
 
-          tourneysMap.set(d.id, {
+          tourneysMapRef.current.set(d.id, {
             id: d.id,
             ...data,
             joinedPlayers: joinedList,
@@ -132,16 +156,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const unsubMatches = onSnapshot(
       collection(db, 'matches'),
       (snapshot) => {
+        matchesMapRef.current.clear();
         snapshot.docs.forEach((d) => {
           const data = d.data();
-          const existing = tourneysMap.get(d.id);
+          const existing = matchesMapRef.current.get(d.id);
           const joinedList = Array.isArray(data.joinedPlayers) && data.joinedPlayers.length > 0
             ? data.joinedPlayers
             : Array.isArray(existing?.joinedPlayers) && existing.joinedPlayers.length > 0
             ? existing.joinedPlayers
             : Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
 
-          tourneysMap.set(d.id, {
+          matchesMapRef.current.set(d.id, {
             id: d.id,
             title: data.title || 'Free Fire CS Match',
             category: data.category || 'battle_royale',
@@ -409,32 +434,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         transaction.delete(matchRef);
       });
 
-      alert(
+      // Immediately update local UI state to remove deleted match without requiring refresh
+      tourneysMapRef.current.delete(t.id);
+      matchesMapRef.current.delete(t.id);
+      setTournaments((prev) => prev.filter((m) => m.id !== t.id));
+
+      showToast(
         refundedUsersCount > 0
-          ? `Tournament "${t.title}" cancelled and deleted successfully!\n\nAutomated Refund Summary:\n- Players Refunded: ${refundedUsersCount}\n- Total Refund Credited: ₹${totalRefundedAmount}\n\nThe match has been removed from all player screens in real-time.`
-          : `Tournament "${t.title}" has been deleted and removed from all player screens in real-time.`
+          ? `Tournament "${t.title}" cancelled! Refunded ${refundedUsersCount} players (₹${totalRefundedAmount}).`
+          : `Tournament "${t.title}" deleted and removed from screens.`,
+        'success'
       );
     } catch (err: unknown) {
       console.error('Error cancelling and deleting tournament:', err);
-      alert(`Failed to cancel tournament: ${err instanceof Error ? err.message : String(err)}`);
+      showToast(`Failed to cancel tournament: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   };
 
-  // Direct Match Deletion
-  const handleDeleteMatch = async (matchId: string) => {
-    if (window.confirm("Kya aap sach me is match ko permanently delete karna chahte hain?")) {
+  // Robust Match Deletion Logic
+  const handleDeleteMatch = async (matchId: string, skipPrompt = false) => {
+    let confirmed = skipPrompt;
+    if (!confirmed) {
       try {
-        await deleteDoc(doc(db, 'matches', matchId));
-        try {
-          await deleteDoc(doc(db, 'tournaments', matchId));
-        } catch {
-          // tournaments doc might not exist
-        }
-        alert("Match successfully deleted!");
-      } catch (err: unknown) {
-        console.error("Delete match error:", err);
-        alert("Failed to delete match: " + (err instanceof Error ? err.message : String(err)));
+        confirmed = window.confirm("Are you sure you want to permanently delete this tournament match?");
+      } catch {
+        // Fallback to in-app confirmation modal if window.confirm cannot be shown
+        const target = tournaments.find((t) => t.id === matchId);
+        setMatchToDelete({ id: matchId, title: target?.title || 'Tournament Match' });
+        return;
       }
+    }
+
+    if (!confirmed) return;
+
+    setDeleteLoading(true);
+
+    // 1. Update local UI state immediately to remove the deleted match from the screen without requiring a hard refresh
+    tourneysMapRef.current.delete(matchId);
+    matchesMapRef.current.delete(matchId);
+    setTournaments((prev) => prev.filter((m) => m.id !== matchId));
+
+    try {
+      // 2. Execute Firestore deleteDoc
+      await deleteDoc(doc(db, "matches", matchId));
+      try {
+        await deleteDoc(doc(db, "tournaments", matchId));
+      } catch {
+        // tournaments doc might not exist
+      }
+
+      setMatchToDelete(null);
+      showToast("Tournament match permanently deleted from database!", "success");
+    } catch (err: unknown) {
+      console.error("Delete match error:", err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      showToast("Failed to delete match: " + errMsg, "error");
+      // Re-sync if deletion failed
+      updateTournamentsState();
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -1325,6 +1383,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           tournament={declaringResultsTour}
           isOpen={Boolean(declaringResultsTour)}
           onClose={() => setDeclaringResultsTour(null)}
+          onSuccess={(msg) => showToast(msg, 'success')}
         />
       )}
 
@@ -1344,6 +1403,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           isOpen={Boolean(editingWalletUser)}
           onClose={() => setEditingWalletUser(null)}
         />
+      )}
+
+      {/* ================= MODAL: CONFIRM PERMANENT MATCH DELETION ================= */}
+      {matchToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-[#0e0c18] border border-red-900/60 rounded-2xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-bold text-white font-heading">Delete Tournament Match</h3>
+                <p className="text-xs text-slate-400 truncate">{matchToDelete.title || 'Selected Match'}</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-red-950/20 border border-red-900/40 rounded-xl text-xs text-red-300 leading-relaxed">
+              <strong className="block text-white mb-1">
+                Are you sure you want to permanently delete this tournament match?
+              </strong>
+              <p className="text-slate-400 text-[11px]">
+                This match will be permanently removed from all player screens in real-time and deleted from the database.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setMatchToDelete(null)}
+                disabled={deleteLoading}
+                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-semibold border border-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteMatch(matchToDelete.id, true)}
+                disabled={deleteLoading}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg shadow-red-950/80 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{deleteLoading ? 'Deleting...' : 'Yes, Permanently Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= FLOATING ADMIN TOAST ================= */}
+      {adminToast && (
+        <div className="fixed top-5 right-5 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl border backdrop-blur-md bg-[#0e0c18]/95 border-red-950/80 animate-in fade-in slide-in-from-top-2 duration-200">
+          {adminToast.type === 'error' ? (
+            <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          )}
+          <span className={`text-xs font-semibold ${adminToast.type === 'error' ? 'text-red-300' : 'text-emerald-300'}`}>
+            {adminToast.message}
+          </span>
+          <button
+            onClick={() => setAdminToast(null)}
+            className="text-slate-500 hover:text-white transition-colors cursor-pointer ml-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -1786,10 +1911,16 @@ const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose
 };
 
 /* ---------------- DECLARE RESULTS & AUTO-PAYOUT MODAL ---------------- */
-const DeclareResultsModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose: () => void }> = ({
+const DeclareResultsModal: React.FC<{
+  tournament: Tournament;
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: (msg: string) => void;
+}> = ({
   tournament,
   isOpen,
   onClose,
+  onSuccess,
 }) => {
   const [playersList, setPlayersList] = useState<{ id: string; userId: string; userIgn: string; freeFireUid?: string }[]>([]);
   const [playerRanks, setPlayerRanks] = useState<Record<string, string>>({});
@@ -1883,77 +2014,95 @@ const DeclareResultsModal: React.FC<{ tournament: Tournament; isOpen: boolean; o
 
     setIsDeclaring(true);
     try {
-      await runTransaction(db, async (transaction) => {
-        const winnersSummary: any[] = [];
+      // Use Firestore writeBatch with FieldValue.increment() to eliminate interleaved read/write transaction errors
+      const batch = writeBatch(db);
+      const winnersSummary: any[] = [];
 
-        for (const player of playersList) {
-          const kills = Number(playerKills[player.userId] || 0);
-          const rankStr = playerRanks[player.userId] || '';
-          const rankNum = rankStr ? parseInt(rankStr, 10) : 0;
-          const totalPrize = calculatePlayerPrize(player.userId);
+      // Update each evaluated player's winning balance directly with increment
+      playersList.forEach((player) => {
+        const kills = Number(playerKills[player.userId] || 0);
+        const rankStr = playerRanks[player.userId] || '';
+        const rankNum = rankStr ? parseInt(rankStr, 10) : 0;
+        const prizeAmount = calculatePlayerPrize(player.userId);
+        const isBooyah = rankNum === 1;
 
-          // 1. Credit player's Winnings Balance in Firestore 'users'
+        if (prizeAmount > 0 || kills > 0 || isBooyah) {
           const userRef = doc(db, 'users', player.userId);
-          const userSnap = await transaction.get(userRef);
+          batch.update(userRef, {
+            winningBalance: increment(Number(prizeAmount)),
+            winningsBalance: increment(Number(prizeAmount)),
+            totalKills: increment(Number(kills || 0)),
+            matchesWon: increment(isBooyah ? 1 : 0),
+            tournamentsWon: increment(isBooyah ? 1 : 0),
+            matchesPlayed: increment(1),
+            totalEarnings: increment(Number(prizeAmount)),
+            updatedAt: new Date().toISOString(),
+          });
 
-          if (userSnap.exists()) {
-            const currentWinnings = Number(userSnap.data()?.winningsBalance || 0);
-            const currentPlayed = Number(userSnap.data()?.matchesPlayed || 0);
-            const currentKills = Number(userSnap.data()?.totalKills || 0);
-            const currentWon = Number(userSnap.data()?.tournamentsWon || 0);
-            const currentEarned = Number(userSnap.data()?.totalEarnings || 0);
-
-            transaction.update(userRef, {
-              winningsBalance: currentWinnings + totalPrize,
-              matchesPlayed: currentPlayed + 1,
-              totalKills: currentKills + kills,
-              tournamentsWon: currentWon + (rankNum === 1 ? 1 : 0),
-              totalEarnings: currentEarned + totalPrize,
-              updatedAt: new Date().toISOString(),
-            });
-          }
-
-          if (totalPrize > 0 || kills > 0 || rankNum > 0) {
-            winnersSummary.push({
-              rank: rankNum || null,
+          // Create reward transaction history record
+          if (prizeAmount > 0) {
+            const historyRef = doc(collection(db, 'walletHistory'));
+            batch.set(historyRef, {
               userId: player.userId,
-              ign: player.userIgn,
-              freeFireUid: player.freeFireUid || '',
-              kills: kills,
-              killReward: kills * perKillRate,
-              rankReward: rankNum === 1 ? rank1Reward : rankNum === 2 ? rank2Reward : 0,
-              prizeWon: totalPrize,
+              type: 'PRIZE_WINNING',
+              amount: Number(prizeAmount),
+              matchId: tournament.id,
+              matchTitle: tournament.title || 'Custom Room',
+              createdAt: new Date().toISOString(),
             });
           }
+
+          winnersSummary.push({
+            rank: rankNum || null,
+            userId: player.userId,
+            ign: player.userIgn,
+            freeFireUid: player.freeFireUid || '',
+            kills: kills,
+            killReward: kills * perKillRate,
+            rankReward: rankNum === 1 ? rank1Reward : rankNum === 2 ? rank2Reward : rankNum === 3 ? rank3Reward : 0,
+            prizeWon: prizeAmount,
+            isBooyah: isBooyah,
+          });
         }
-
-        // Sort winners by rank (Rank 1 first)
-        winnersSummary.sort((a, b) => (a.rank || 99) - (b.rank || 99));
-
-        const resultsPayload = {
-          declaredAt: new Date().toISOString(),
-          totalDistributed: totalPrizeDistributed,
-          winners: winnersSummary,
-        };
-
-        // 2. Update Tournament & Match document in Firestore
-        const tourRef = doc(db, 'tournaments', tournament.id);
-        transaction.update(tourRef, {
-          status: 'completed',
-          results: resultsPayload,
-          updatedAt: new Date().toISOString(),
-        });
-
-        // 3. Update Match document in 'matches' collection
-        const matchRef = doc(db, 'matches', tournament.id);
-        transaction.update(matchRef, {
-          status: 'COMPLETED',
-          results: resultsPayload,
-          updatedAt: new Date().toISOString(),
-        });
       });
 
-      alert(`Booyah! ₹${totalPrizeDistributed} successfully credited to participants' Winnings Wallets. Match marked as COMPLETED.`);
+      // Sort winners by rank (Rank 1 first)
+      winnersSummary.sort((a, b) => (a.rank || 99) - (b.rank || 99));
+
+      const resultsPayload = {
+        declaredAt: new Date().toISOString(),
+        totalDistributed: totalPrizeDistributed,
+        winners: winnersSummary,
+      };
+
+      // Mark match as completed and distributed in both 'matches' and 'tournaments' collections
+      const matchRef = doc(db, 'matches', tournament.id);
+      batch.update(matchRef, {
+        status: 'COMPLETED',
+        prizesDistributed: true,
+        completedAt: new Date().toISOString(),
+        results: resultsPayload,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const tourRef = doc(db, 'tournaments', tournament.id);
+      batch.update(tourRef, {
+        status: 'completed',
+        prizesDistributed: true,
+        completedAt: new Date().toISOString(),
+        results: resultsPayload,
+        updatedAt: new Date().toISOString(),
+      });
+
+      // Commit all updates safely at once with writeBatch
+      await batch.commit();
+
+      if (onSuccess) {
+        onSuccess('Prizes successfully distributed to all players!');
+      } else {
+        alert('Prizes successfully distributed to all players!');
+      }
+
       onClose();
     } catch (err: unknown) {
       console.error('Error distributing winnings:', err);
