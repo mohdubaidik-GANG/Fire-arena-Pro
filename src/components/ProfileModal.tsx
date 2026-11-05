@@ -153,7 +153,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
             </div>
           </div>
 
-          {/* EliteX24 Account Wallet Summary */}
+          {/* Fire Arena Pro Account Wallet Summary */}
           <div className="p-3.5 rounded-xl bg-gradient-to-r from-red-950/30 to-[#120a1e] border border-red-900/40 flex items-center justify-between gap-3">
             <div>
               <span className="text-[10px] text-red-400 uppercase font-mono font-bold tracking-wider block">

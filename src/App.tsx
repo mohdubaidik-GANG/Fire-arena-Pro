@@ -46,14 +46,18 @@ import { AuthGate } from './components/AuthGate';
 import { ProfileSetupModal } from './components/ProfileSetupModal';
 import { Header } from './components/Header';
 import { TournamentCard } from './components/TournamentCard';
-import { JoinMatchModal } from './components/JoinMatchModal';
-import { WalletModal } from './components/WalletModal';
-import { ProfileModal } from './components/ProfileModal';
-import { MatchRulesModal } from './components/MatchRulesModal';
 import { WalletAndCareerStats } from './components/WalletAndCareerStats';
 import { AdminDashboard } from './components/Admin/AdminDashboard';
 import { UnauthorizedScreen } from './components/Admin/UnauthorizedScreen';
 import { Tournament, TournamentRegistration, TournamentCategory } from './types';
+import { sound } from './utils/audio';
+
+// Lazy loaded modals for fast initial bundle and zero lag
+const JoinMatchModal = React.lazy(() => import('./components/JoinMatchModal').then(m => ({ default: m.JoinMatchModal })));
+const WalletModal = React.lazy(() => import('./components/WalletModal').then(m => ({ default: m.WalletModal })));
+const ProfileModal = React.lazy(() => import('./components/ProfileModal').then(m => ({ default: m.ProfileModal })));
+const MatchRulesModal = React.lazy(() => import('./components/MatchRulesModal').then(m => ({ default: m.MatchRulesModal })));
+const ProofSubmissionModal = React.lazy(() => import('./components/ProofSubmissionModal').then(m => ({ default: m.ProofSubmissionModal })));
 
 // Root App Component
 export default function App() {
@@ -107,11 +111,11 @@ function MainRouter() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#06070a] text-white">
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 to-rose-700 flex items-center justify-center shadow-[0_0_25px_rgba(220,38,38,0.5)] animate-pulse mb-3">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 via-rose-600 to-amber-500 flex items-center justify-center shadow-[0_0_25px_rgba(220,38,38,0.5)] animate-pulse mb-3">
           <Gamepad2 className="w-8 h-8 text-white stroke-[2.5]" />
         </div>
         <div className="text-xs font-heading font-black uppercase tracking-widest text-red-500">
-          ELITEX24 ESPORTS ARENA
+          FIRE-ARENA-PRO ESPORTS ARENA
         </div>
       </div>
     );
@@ -142,7 +146,7 @@ function MainRouter() {
   return <PlayerArena onNavigate={navigateTo} onLogout={handleLogout} />;
 }
 
-// ---------------- 12 ELITEX24 GAME MODES ---------------- //
+// ---------------- 12 FIRE-ARENA-PRO GAME MODES ---------------- //
 const ELITEX_GAME_MODES = [
   { id: 'FULL MAP', label: 'FULL MAP', badge: 'BR' },
   { id: 'FULL MAP 2', label: 'FULL MAP 2', badge: 'BR 2' },
@@ -158,7 +162,7 @@ const ELITEX_GAME_MODES = [
   { id: 'FREE MATCH', label: 'FREE MATCH', badge: '100% FREE' },
 ];
 
-// ---------------- PLAYER ARENA SCREEN (ELITEX24 5-TAB SYSTEM) ---------------- //
+// ---------------- PLAYER ARENA SCREEN (5-TAB SYSTEM) ---------------- //
 interface PlayerArenaProps {
   onNavigate: (path: string) => void;
   onLogout: () => void;
@@ -193,6 +197,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [modeType, setModeType] = useState<'TOURNAMENT' | 'SOLO'>('TOURNAMENT');
   const [myMatchesFilter, setMyMatchesFilter] = useState<'all' | 'ongoing' | 'upcoming' | 'completed'>('all');
+  const [matchFilterPill, setMatchFilterPill] = useState<'all' | 'Solo' | 'Duo' | 'Squad' | 'cs' | 'free'>('all');
 
   // Modals State
   const [walletModalOpen, setWalletModalOpen] = useState(false);
@@ -200,6 +205,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [selectedTournamentToJoin, setSelectedTournamentToJoin] = useState<Tournament | null>(null);
   const [selectedTournamentForRules, setSelectedTournamentForRules] = useState<Tournament | null>(null);
+  const [selectedTournamentForProof, setSelectedTournamentForProof] = useState<Tournament | null>(null);
   const [generalRulesOpen, setGeneralRulesOpen] = useState(false);
 
   // Settings & Menu Modals
@@ -211,13 +217,29 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   // Promo Banner Carousel
   const [activeBannerIdx, setActiveBannerIdx] = useState(0);
 
-  // Tournaments & Registrations Data
-  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  // Tournaments & Registrations Data with LocalStorage Caching for zero-lag instant display
+  const [tournaments, setTournaments] = useState<Tournament[]>(() => {
+    try {
+      const cached = localStorage.getItem('cached_tournaments');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return [];
+  });
   const [myRegistrations, setMyRegistrations] = useState<Record<string, TournamentRegistration>>({});
-  const [fetchingTournaments, setFetchingTournaments] = useState(true);
+  const [fetchingTournaments, setFetchingTournaments] = useState(() => {
+    try {
+      return !localStorage.getItem('cached_tournaments');
+    } catch {
+      return true;
+    }
+  });
 
-  // Ranking Category Scroller
+  // Ranking Tab Controls
   const [rankingCategory, setRankingCategory] = useState('ALL');
+  const [leaderboardType, setLeaderboardType] = useState<'winnings' | 'kills'>('winnings');
 
   // Promo Banners Definition
   const PROMO_BANNERS = [
@@ -225,7 +247,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       id: 0,
       tag: '0% CHARGES ON REDEEM',
       title: 'Get your payouts within 30 minutes, max 6 hours',
-      subtitle: 'Fast UPI & Play Redeem Codes verified by EliteX24 staff',
+      subtitle: 'Fast UPI & Play Redeem Codes verified by Fire Arena Pro staff',
       icon: Zap,
       badgeColor: 'bg-red-600',
       action: () => handleOpenWallet('withdraw'),
@@ -238,7 +260,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       subtitle: 'Daily custom giveaway schedules, tips, and instant room IDs',
       icon: MessageCircle,
       badgeColor: 'bg-emerald-600',
-      action: () => window.open('https://whatsapp.com/channel/0029VaEliteX24', '_blank'),
+      action: () => window.open('https://whatsapp.com/channel/0029VaFireArenaPro', '_blank'),
       btnLabel: 'Join Channel'
     },
     {
@@ -390,6 +412,9 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       const list = Array.from(tourneyMap.values());
       list.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
       setTournaments(list);
+      try {
+        localStorage.setItem('cached_tournaments', JSON.stringify(list));
+      } catch {}
       setFetchingTournaments(false);
     };
 
@@ -528,7 +553,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     };
   }, [user, tournaments, profile]);
 
-  // Seed default tournaments for EliteX24 modes if empty
+  // Seed default tournaments for Fire Arena Pro modes if empty
   const seedDefaultTournaments = async () => {
     const defaultList: Omit<Tournament, 'id'>[] = [
       {
@@ -677,6 +702,22 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const filteredTournaments = tournaments.filter((t) => {
     if (t.status === 'cancelled') return false;
 
+    // Filter by Dynamic Match Filter Pills ("All", "Solo", "Duo", "Squad", "Clash Squad (CS 4v4)", "Free Entry")
+    if (matchFilterPill === 'Solo') {
+      if (t.mode?.toLowerCase() !== 'solo') return false;
+    } else if (matchFilterPill === 'Duo') {
+      if (t.mode?.toLowerCase() !== 'duo') return false;
+    } else if (matchFilterPill === 'Squad') {
+      if (t.mode?.toLowerCase() !== 'squad') return false;
+    } else if (matchFilterPill === 'cs') {
+      const cat = (t.category || '').toLowerCase();
+      const title = (t.title || '').toLowerCase();
+      if (!cat.includes('cs') && !title.includes('cs') && !cat.includes('clash') && !title.includes('clash')) return false;
+    } else if (matchFilterPill === 'free') {
+      const isFree = t.entryFee === 0 || (t.category || '').toLowerCase().includes('free') || (t.title || '').toLowerCase().includes('free');
+      if (!isFree) return false;
+    }
+
     // Filter by category if specific category selected
     if (activeCategory !== 'all') {
       const matchCat = (t.category || '').toUpperCase().trim();
@@ -736,7 +777,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
            ========================================================================= */}
         {activeTab === 'play' && (
           <div className="space-y-5 animate-in fade-in duration-200">
-            {/* Notice Megaphone Banner: "[ ELITEX24 RULES — CLICK HERE ]" */}
+            {/* Notice Megaphone Banner: "[ FIRE-ARENA-PRO RULES — CLICK HERE ]" */}
             <button
               onClick={() => setGeneralRulesOpen(true)}
               className="w-full p-2.5 sm:p-3 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white flex items-center justify-between gap-2 shadow-lg shadow-red-600/25 active:scale-[0.99] transition-all cursor-pointer overflow-hidden border border-red-500/50"
@@ -747,7 +788,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                 </div>
                 <div className="text-left truncate">
                   <span className="font-heading font-black text-xs sm:text-sm tracking-wider uppercase block">
-                    [ ELITEX24 RULES — CLICK HERE ]
+                    [ FIRE-ARENA-PRO RULES — CLICK HERE ]
                   </span>
                   <span className="text-[10px] text-red-100/80 truncate block font-mono">
                     Fair play guidelines, room ID sharing rules & prize release terms
@@ -765,7 +806,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                     <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-black text-white uppercase tracking-wider ${PROMO_BANNERS[activeBannerIdx].badgeColor}`}>
                       {PROMO_BANNERS[activeBannerIdx].tag}
                     </span>
-                    <span className="text-[10px] text-red-400 font-mono">EliteX24 Official</span>
+                    <span className="text-[10px] text-red-400 font-mono">Fire Arena Pro Official</span>
                   </div>
                   <h3 className="text-sm sm:text-lg font-heading font-extrabold text-white tracking-tight">
                     {PROMO_BANNERS[activeBannerIdx].title}
@@ -948,7 +989,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
             {/* Tournaments Match Feed */}
             <div className="space-y-3 pt-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <span className="text-xs font-heading font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
                   <Flame className="w-4 h-4 text-red-500" />
                   <span>
@@ -957,31 +998,68 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                 </span>
                 {activeCategory !== 'all' && (
                   <button
-                    onClick={() => setActiveCategory('all')}
-                    className="text-[11px] text-red-400 hover:text-red-300 font-semibold cursor-pointer underline underline-offset-2"
+                    onClick={() => {
+                      sound.playClick();
+                      setActiveCategory('all');
+                      setMatchFilterPill('all');
+                    }}
+                    className="text-[11px] text-red-400 hover:text-red-300 font-semibold cursor-pointer underline underline-offset-2 self-start sm:self-auto"
                   >
                     View All Matches →
                   </button>
                 )}
               </div>
 
+              {/* Dynamic Match Filters Pills ("All", "Solo", "Duo", "Squad", "Clash Squad (CS 4v4)", "Free Entry") */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'Solo', label: 'Solo' },
+                  { id: 'Duo', label: 'Duo' },
+                  { id: 'Squad', label: 'Squad' },
+                  { id: 'cs', label: 'Clash Squad (CS 4v4)' },
+                  { id: 'free', label: 'Free Entry' },
+                ].map((pill) => {
+                  const isSelected = matchFilterPill === pill.id;
+                  return (
+                    <button
+                      key={pill.id}
+                      type="button"
+                      onClick={() => {
+                        sound.playClick();
+                        setMatchFilterPill(pill.id as any);
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-heading font-bold whitespace-nowrap transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-md shadow-red-600/30'
+                          : 'bg-[#0e0f18] border border-red-950/60 text-slate-400 hover:text-white hover:border-red-900/60'
+                      }`}
+                    >
+                      {pill.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               {fetchingTournaments ? (
                 <div className="p-12 text-center text-xs text-slate-500">
-                  Synchronizing EliteX24 custom match rooms...
+                  Synchronizing Fire Arena Pro custom match rooms...
                 </div>
               ) : filteredTournaments.length === 0 ? (
                 <div className="p-8 rounded-2xl bg-[#090a14] border border-red-950/60 text-center space-y-3">
                   <Trophy className="w-10 h-10 text-slate-600 mx-auto" />
                   <h3 className="text-sm font-bold text-white font-heading">
-                    No Tournaments Found in {activeCategory}
+                    No Tournaments Found
                   </h3>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
                     New custom rooms launch every 30 minutes. Check other categories or view all open tournaments.
                   </p>
                   <button
                     onClick={() => {
+                      sound.playClick();
                       setActiveCategory('all');
                       setMyMatchesFilter('all');
+                      setMatchFilterPill('all');
                     }}
                     className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 text-white font-heading font-bold text-xs uppercase tracking-wider cursor-pointer shadow-md shadow-red-600/30"
                   >
@@ -995,8 +1073,18 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                       key={tournament.id}
                       tournament={tournament}
                       userRegistration={myRegistrations[tournament.id]}
-                      onJoinClick={(tour) => setSelectedTournamentToJoin(tour)}
-                      onViewDetails={(tour) => setSelectedTournamentForRules(tour)}
+                      onJoinClick={(tour) => {
+                        sound.playClick();
+                        setSelectedTournamentToJoin(tour);
+                      }}
+                      onViewDetails={(tour) => {
+                        sound.playClick();
+                        setSelectedTournamentForRules(tour);
+                      }}
+                      onSubmitProof={(tour) => {
+                        sound.playClick();
+                        setSelectedTournamentForProof(tour);
+                      }}
                     />
                   ))}
                 </div>
@@ -1010,23 +1098,60 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
            ========================================================================= */}
         {activeTab === 'ranking' && (
           <div className="max-w-3xl mx-auto space-y-5 animate-in fade-in duration-200">
-            {/* Header Title */}
-            <div className="flex items-center justify-between">
+            {/* Header Title & Mode Toggle */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg sm:text-xl font-heading font-black text-white tracking-wide flex items-center gap-2">
                   <Trophy className="w-5 h-5 text-amber-400" />
-                  <span>LEADERBOARD RANKINGS</span>
+                  <span>FIRE ARENA PRO LEADERBOARD</span>
                 </h2>
-                <p className="text-xs text-slate-400">Elite players with highest tournament coins & win record</p>
+                <p className="text-xs text-slate-400">Official tournament rankings & top tier esports performers</p>
+              </div>
+
+              {/* Toggle: Top Tournament Winners vs Top Killers */}
+              <div className="flex items-center gap-1 p-1 bg-black/60 rounded-xl border border-red-950/70 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playClick();
+                    setLeaderboardType('winnings');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
+                    leaderboardType === 'winnings'
+                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-600/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Top Winners</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playClick();
+                    setLeaderboardType('kills');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
+                    leaderboardType === 'kills'
+                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-600/30'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Crosshair className="w-3.5 h-3.5 text-red-400" />
+                  <span>Top Killers</span>
+                </button>
               </div>
             </div>
 
             {/* Top Horizontal Category Scroller */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
               {['ALL', 'FULL MAP', 'LW 10₹', 'CS HEAD', 'LW 1V1', 'LW 2V2', 'CS 1V1'].map((cat) => (
                 <button
                   key={cat}
-                  onClick={() => setRankingCategory(cat)}
+                  onClick={() => {
+                    sound.playClick();
+                    setRankingCategory(cat);
+                  }}
                   className={`px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer ${
                     rankingCategory === cat
                       ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-600/30'
@@ -1038,87 +1163,127 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               ))}
             </div>
 
-            {/* Top 3 Podium Cards */}
-            <div className="grid grid-cols-3 gap-2.5 pt-2">
-              {/* Rank 2 (Silver) */}
-              <div className="p-3.5 rounded-2xl bg-[#0c0d18] border border-slate-700/60 text-center flex flex-col items-center justify-between space-y-2">
-                <div className="w-8 h-8 rounded-full bg-slate-300/20 text-slate-300 font-mono font-bold text-xs flex items-center justify-center">
+            {/* Top 3 Podium Cards with Gold, Silver, Bronze Medals */}
+            <div className="grid grid-cols-3 gap-2.5 pt-3">
+              {/* Rank 2 (Silver Medal 🥈) */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-b from-slate-600/10 via-[#0e101d] to-[#080911] border border-slate-400/30 text-center flex flex-col items-center justify-between space-y-2 shadow-lg shadow-slate-900/40 relative">
+                <span className="text-xl">🥈</span>
+                <div className="w-8 h-8 rounded-full bg-slate-300 text-black font-mono font-black text-xs flex items-center justify-center shadow-md">
                   #2
                 </div>
                 <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-white block truncate w-full">ViperKill FF</span>
-                  <span className="text-[10px] text-slate-400 font-mono block">142 Matches</span>
+                  <span className="text-xs font-bold text-white block truncate w-full">
+                    {leaderboardType === 'winnings' ? 'ViperKill FF' : 'White444_Head'}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono block">
+                    {leaderboardType === 'winnings' ? '142 Matches' : '98 Matches'}
+                  </span>
                 </div>
-                <span className="text-xs font-black font-mono text-amber-400">🪙 8,450</span>
+                <span className="text-xs font-black font-mono text-slate-200">
+                  {leaderboardType === 'winnings' ? '🪙 8,450' : '🎯 956 Kills'}
+                </span>
               </div>
 
-              {/* Rank 1 (Gold) */}
-              <div className="p-4 rounded-2xl bg-gradient-to-b from-amber-500/15 via-[#140f1a] to-[#0c0d18] border border-amber-500/50 text-center flex flex-col items-center justify-between space-y-2 -translate-y-2 shadow-lg shadow-amber-500/10">
-                <div className="w-10 h-10 rounded-full bg-amber-500 text-black font-mono font-black text-sm flex items-center justify-center shadow-md shadow-amber-500/30">
+              {/* Rank 1 (Gold Medal 🥇) */}
+              <div className="p-4 rounded-2xl bg-gradient-to-b from-amber-500/20 via-[#18121f] to-[#0c0d18] border-2 border-amber-500/60 text-center flex flex-col items-center justify-between space-y-2 -translate-y-2.5 shadow-xl shadow-amber-500/20 relative">
+                <span className="text-2xl animate-bounce">🥇</span>
+                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-500 text-black font-mono font-black text-sm flex items-center justify-center shadow-lg shadow-amber-500/40">
                   <Crown className="w-5 h-5 fill-black" />
                 </div>
                 <div className="space-y-0.5">
-                  <span className="text-sm font-black text-white block truncate w-full">Raistar_Pro99</span>
-                  <span className="text-[10px] text-amber-400 font-mono block">210 Matches</span>
+                  <span className="text-sm font-black text-amber-300 block truncate w-full">
+                    Raistar_Pro99
+                  </span>
+                  <span className="text-[10px] text-amber-400/90 font-mono block">
+                    {leaderboardType === 'winnings' ? '210 Matches Won' : '1,284 Frags'}
+                  </span>
                 </div>
-                <span className="text-sm font-black font-mono text-amber-300">🪙 16,920</span>
+                <span className="text-sm font-black font-mono text-amber-300">
+                  {leaderboardType === 'winnings' ? '🪙 16,920' : '🎯 1,284 Kills'}
+                </span>
               </div>
 
-              {/* Rank 3 (Bronze) */}
-              <div className="p-3.5 rounded-2xl bg-[#0c0d18] border border-amber-900/60 text-center flex flex-col items-center justify-between space-y-2">
-                <div className="w-8 h-8 rounded-full bg-amber-800/20 text-amber-600 font-mono font-bold text-xs flex items-center justify-center">
+              {/* Rank 3 (Bronze Medal 🥉) */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-b from-amber-900/15 via-[#0e0c15] to-[#080911] border border-amber-800/30 text-center flex flex-col items-center justify-between space-y-2 shadow-lg shadow-amber-950/40 relative">
+                <span className="text-xl">🥉</span>
+                <div className="w-8 h-8 rounded-full bg-amber-700 text-black font-mono font-black text-xs flex items-center justify-center shadow-md">
                   #3
                 </div>
                 <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-white block truncate w-full">ShadowOP</span>
-                  <span className="text-[10px] text-slate-400 font-mono block">98 Matches</span>
+                  <span className="text-xs font-bold text-white block truncate w-full">
+                    {leaderboardType === 'winnings' ? 'ShadowOP' : 'ViperKill FF'}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono block">
+                    {leaderboardType === 'winnings' ? '98 Matches' : '142 Matches'}
+                  </span>
                 </div>
-                <span className="text-xs font-black font-mono text-amber-400">🪙 6,180</span>
+                <span className="text-xs font-black font-mono text-amber-500">
+                  {leaderboardType === 'winnings' ? '🪙 6,180' : '🎯 840 Kills'}
+                </span>
               </div>
             </div>
 
-            {/* Clean Leaderboard Table */}
+            {/* Clean Leaderboard Table with Medals & Real User Stats */}
             <div className="rounded-2xl bg-[#090a14] border border-red-950/70 overflow-hidden shadow-xl">
               <div className="p-3.5 border-b border-red-950/60 bg-[#0d0e1c] flex items-center justify-between text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
                 <div className="flex items-center gap-4">
                   <span className="w-8 text-center">Rank</span>
-                  <span>User Name</span>
+                  <span>User Name / Player</span>
                 </div>
-                <span>Winning</span>
+                <span>{leaderboardType === 'winnings' ? 'Total Won' : 'Kills'}</span>
               </div>
 
               <div className="divide-y divide-red-950/40">
-                {[
-                  { rank: 1, name: 'Raistar_Pro99', winnings: '16,920', badge: '🥇' },
-                  { rank: 2, name: 'ViperKill FF', winnings: '8,450', badge: '🥈' },
-                  { rank: 3, name: 'ShadowOP', winnings: '6,180', badge: '🥉' },
-                  { rank: 4, name: 'White444_Head', winnings: '4,900', badge: '#4' },
-                  { rank: 5, name: 'SniperKing7', winnings: '3,750', badge: '#5' },
-                  { rank: 6, name: 'DesiGamer_T1', winnings: '2,890', badge: '#6' },
-                  { rank: 7, name: 'Total_Gaming_9', winnings: '2,240', badge: '#7' },
-                  { rank: 8, name: 'KillerClash', winnings: '1,980', badge: '#8' },
-                  { rank: 9, name: 'LoneWolf_Pro', winnings: '1,560', badge: '#9' },
-                  { rank: 10, name: profile?.ign || 'You (Gamer)', winnings: ((profile?.winningsBalance || 0) + (profile?.depositBalance || 0)).toLocaleString('en-IN'), badge: '#10' },
-                ].map((player) => (
+                {(leaderboardType === 'winnings'
+                  ? [
+                      { rank: 1, name: 'Raistar_Pro99', score: '🪙 16,920', badge: '🥇 Gold' },
+                      { rank: 2, name: 'ViperKill FF', score: '🪙 8,450', badge: '🥈 Silver' },
+                      { rank: 3, name: 'ShadowOP', score: '🪙 6,180', badge: '🥉 Bronze' },
+                      { rank: 4, name: 'White444_Head', score: '🪙 4,900', badge: '#4' },
+                      { rank: 5, name: 'SniperKing7', score: '🪙 3,750', badge: '#5' },
+                      { rank: 6, name: 'DesiGamer_T1', score: '🪙 2,890', badge: '#6' },
+                      { rank: 7, name: 'Total_Gaming_9', score: '🪙 2,240', badge: '#7' },
+                      { rank: 8, name: 'KillerClash', score: '🪙 1,980', badge: '#8' },
+                      { rank: 9, name: 'LoneWolf_Pro', score: '🪙 1,560', badge: '#9' },
+                      { rank: 10, name: profile?.ign || 'You (Gamer)', score: `🪙 ${((profile?.winningsBalance || 0) + (profile?.depositBalance || 0)).toLocaleString('en-IN')}`, badge: '#10' },
+                    ]
+                  : [
+                      { rank: 1, name: 'Raistar_Pro99', score: '🎯 1,284 Kills', badge: '🥇 Gold' },
+                      { rank: 2, name: 'White444_Head', score: '🎯 956 Kills', badge: '🥈 Silver' },
+                      { rank: 3, name: 'ViperKill FF', score: '🎯 840 Kills', badge: '🥉 Bronze' },
+                      { rank: 4, name: 'SniperKing7', score: '🎯 712 Kills', badge: '#4' },
+                      { rank: 5, name: 'ShadowOP', score: '🎯 624 Kills', badge: '#5' },
+                      { rank: 6, name: 'KillerClash', score: '🎯 510 Kills', badge: '#6' },
+                      { rank: 7, name: 'DesiGamer_T1', score: '🎯 480 Kills', badge: '#7' },
+                      { rank: 8, name: 'Total_Gaming_9', score: '🎯 390 Kills', badge: '#8' },
+                      { rank: 9, name: 'LoneWolf_Pro', score: '🎯 310 Kills', badge: '#9' },
+                      { rank: 10, name: profile?.ign || 'You (Gamer)', score: `🎯 ${profile?.totalKills || 0} Kills`, badge: '#10' },
+                    ]
+                ).map((player) => (
                   <div
                     key={player.rank}
                     className="p-3.5 flex items-center justify-between text-xs hover:bg-red-950/20 transition-colors"
                   >
                     <div className="flex items-center gap-4">
-                      <span className="w-8 text-center font-mono font-bold text-slate-400">
+                      <span className="w-14 text-center font-mono font-bold text-slate-400">
                         {player.badge}
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-white">{player.name}</span>
                         {player.rank <= 3 && (
                           <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[9px] font-mono">
-                            PRO
+                            CHAMPION
+                          </span>
+                        )}
+                        {player.name === profile?.ign && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[9px] font-mono font-bold">
+                            YOU
                           </span>
                         )}
                       </div>
                     </div>
                     <span className="font-black font-mono text-amber-400 flex items-center gap-1">
-                      🪙 {player.winnings}
+                      {player.score}
                     </span>
                   </div>
                 ))}
@@ -1156,7 +1321,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               </div>
 
               <a
-                href="https://whatsapp.com/channel/0029VaEliteX24"
+                href="https://whatsapp.com/channel/0029VaFireArenaPro"
                 target="_blank"
                 rel="noreferrer"
                 className="h-10 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-heading font-black text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shrink-0 shadow-md shadow-emerald-500/20"
@@ -1182,7 +1347,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               </div>
 
               <a
-                href="https://wa.me/919876543210?text=Hi%20EliteX24%20Support,%20I%20need%20help%20with%20my%20wallet"
+                href="https://wa.me/919876543210?text=Hi%20Fire%20Arena%20Pro%20Support,%20I%20need%20help%20with%20my%20wallet"
                 target="_blank"
                 rel="noreferrer"
                 className="h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shrink-0 shadow-md shadow-indigo-600/30"
@@ -1337,7 +1502,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
            ========================================================================= */}
         {activeTab === 'account' && (
           <div className="max-w-2xl mx-auto space-y-4 animate-in fade-in duration-200">
-            {/* Top: EliteX24 Circular Phoenix/Eagle Gaming Logo, Username & Green Verified Tag */}
+            {/* Top: Fire Arena Pro Badge Gaming Logo, Username & Green Verified Tag */}
             <div className="p-5 sm:p-6 rounded-2xl bg-[#090a14] border border-red-950/80 shadow-xl relative overflow-hidden">
               <div className="absolute top-0 right-0 w-48 h-48 bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -1559,7 +1724,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
               {/* 13. Customer Support */}
               <a
-                href="https://wa.me/919876543210?text=Hi%20EliteX24%20Support,%20I%20need%20help"
+                href="https://wa.me/919876543210?text=Hi%20Fire%20Arena%20Pro%20Support,%20I%20need%20help"
                 target="_blank"
                 rel="noreferrer"
                 className="w-full p-3 rounded-xl bg-black/40 hover:bg-red-950/30 border border-slate-900 text-left flex items-center justify-between text-xs text-slate-300 transition-colors cursor-pointer"
@@ -1576,8 +1741,8 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                 onClick={() => {
                   if (navigator.share) {
                     navigator.share({
-                      title: 'EliteX24 Esports Arena',
-                      text: 'Join Free Fire MAX tournaments & win real cash coins on EliteX24!',
+                      title: 'Fire Arena Pro Esports Arena',
+                      text: 'Join Free Fire MAX tournaments & win real cash coins on Fire Arena Pro!',
                       url: window.location.origin,
                     }).catch(() => {});
                   } else {
@@ -1726,25 +1891,29 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         </button>
       </nav>
 
-      {/* Join Match Modal */}
-      {selectedTournamentToJoin && (
-        <JoinMatchModal
-          tournament={selectedTournamentToJoin}
-          isOpen={Boolean(selectedTournamentToJoin)}
-          onClose={() => setSelectedTournamentToJoin(null)}
-          onSuccess={() => {
-            showToast('Slot registered! Check your upcoming matches for room credentials.');
-          }}
-          onOpenDeposit={() => handleOpenWallet('deposit')}
-        />
-      )}
+      <React.Suspense fallback={null}>
+        {/* Join Match Modal */}
+        {selectedTournamentToJoin && (
+          <JoinMatchModal
+            tournament={selectedTournamentToJoin}
+            isOpen={Boolean(selectedTournamentToJoin)}
+            onClose={() => setSelectedTournamentToJoin(null)}
+            onSuccess={() => {
+              showToast('Slot registered! Check your upcoming matches for room credentials.');
+            }}
+            onOpenDeposit={() => handleOpenWallet('deposit')}
+          />
+        )}
 
-      {/* Wallet Modal (Deposit & Withdraw) */}
-      <WalletModal
-        isOpen={walletModalOpen}
-        onClose={() => setWalletModalOpen(false)}
-        initialTab={walletInitialTab}
-      />
+        {/* Wallet Modal (Deposit & Withdraw) */}
+        {walletModalOpen && (
+          <WalletModal
+            isOpen={walletModalOpen}
+            onClose={() => setWalletModalOpen(false)}
+            initialTab={walletInitialTab}
+          />
+        )}
+      </React.Suspense>
 
       {/* Rupayex Instant Auto-Credit Success Popup */}
       {paymentSuccessPopup && (
@@ -1787,35 +1956,56 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         </div>
       )}
 
-      {/* Gamer Profile Modal */}
-      <ProfileModal
-        isOpen={profileModalOpen}
-        onClose={() => setProfileModalOpen(false)}
-        onOpenWallet={() => handleOpenWallet('overview')}
-        onLogout={onLogout}
-      />
+      {/* Suspense Container for Lazy Loaded Modals */}
+      <React.Suspense fallback={null}>
+        {/* Gamer Profile Modal */}
+        {profileModalOpen && (
+          <ProfileModal
+            isOpen={profileModalOpen}
+            onClose={() => setProfileModalOpen(false)}
+            onOpenWallet={() => handleOpenWallet('overview')}
+            onLogout={onLogout}
+          />
+        )}
 
-      {/* Match Rules & Description Modal */}
-      <MatchRulesModal
-        tournament={selectedTournamentForRules}
-        isOpen={Boolean(selectedTournamentForRules)}
-        onClose={() => setSelectedTournamentForRules(null)}
-        onJoinClick={(tour) => setSelectedTournamentToJoin(tour)}
-      />
+        {/* Match Rules & Description Modal */}
+        {selectedTournamentForRules && (
+          <MatchRulesModal
+            tournament={selectedTournamentForRules}
+            isOpen={Boolean(selectedTournamentForRules)}
+            onClose={() => setSelectedTournamentForRules(null)}
+            onJoinClick={(tour) => setSelectedTournamentToJoin(tour)}
+          />
+        )}
 
-      {/* General EliteX24 Rules Modal */}
-      <MatchRulesModal
-        tournament={null}
-        isOpen={generalRulesOpen}
-        onClose={() => setGeneralRulesOpen(false)}
-      />
+        {/* General Fire Arena Pro Rules Modal */}
+        {generalRulesOpen && (
+          <MatchRulesModal
+            tournament={null}
+            isOpen={generalRulesOpen}
+            onClose={() => setGeneralRulesOpen(false)}
+          />
+        )}
+
+        {/* Proof Submission Modal */}
+        {selectedTournamentForProof && (
+          <ProofSubmissionModal
+            tournament={selectedTournamentForProof}
+            isOpen={Boolean(selectedTournamentForProof)}
+            onClose={() => setSelectedTournamentForProof(null)}
+            onSuccess={() => {
+              showToast('Scorecard proof submitted! Admin will verify and disburse prizes.');
+            }}
+          />
+        )}
+      </React.Suspense>
 
       {/* App Tutorial Modal */}
       {tutorialModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
           <div className="w-full max-w-md bg-[#090a14] border border-red-950/80 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-red-950/60 pb-3">
-              <h3 className="text-base font-bold text-white font-heading">EliteX24 App Tutorial</h3>
+              <h3 className="text-base font-bold text-white font-heading">Fire Arena Pro App Tutorial</h3>
               <button onClick={() => setTutorialModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">✕</button>
             </div>
             <div className="space-y-3 text-xs text-slate-300">
@@ -1825,15 +2015,15 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               </div>
               <div className="p-3 rounded-xl bg-black/50 border border-red-950/50 space-y-1">
                 <span className="font-bold text-red-400 block">2. Join Your Favorite Match</span>
-                <p className="text-slate-400">Select any mode from FULL MAP, CS HEAD, or LW 1V1 and book a slot.</p>
+                <p className="text-slate-400">Select any mode from FULL MAP, CS HEAD, or LW 1V1 and pick your slot number.</p>
               </div>
               <div className="p-3 rounded-xl bg-black/50 border border-red-950/50 space-y-1">
                 <span className="font-bold text-red-400 block">3. Get Room Credentials</span>
-                <p className="text-slate-400">15 minutes before the match start, Room ID & Password unlock on your card.</p>
+                <p className="text-slate-400">15 minutes before match start, Room ID & Password unlock with a 1-tap copy button.</p>
               </div>
               <div className="p-3 rounded-xl bg-black/50 border border-red-950/50 space-y-1">
-                <span className="font-bold text-red-400 block">4. Win & Redeem</span>
-                <p className="text-slate-400">Admin disburses kills & rank coins. Withdraw via direct UPI or Play Redeem Code.</p>
+                <span className="font-bold text-red-400 block">4. Submit Scorecard & Win</span>
+                <p className="text-slate-400">Submit match proof screenshot. Admin disburses kill coins & rank prizes directly to your wallet.</p>
               </div>
             </div>
             <button
@@ -1851,18 +2041,18 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
           <div className="w-full max-w-md bg-[#090a14] border border-red-950/80 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-red-950/60 pb-3">
-              <h3 className="text-base font-bold text-white font-heading">About EliteX24 Esports</h3>
+              <h3 className="text-base font-bold text-white font-heading">About Fire Arena Pro Esports</h3>
               <button onClick={() => setAboutModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">✕</button>
             </div>
             <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
               <p>
-                <strong className="text-red-400">EliteX24</strong> is India's premier Free Fire MAX competitive tournament ecosystem offering zero-lag room management, automated prize distribution, and zero-fee withdrawals.
+                <strong className="text-red-400">Fire Arena Pro</strong> is India's premier Free Fire MAX competitive tournament ecosystem offering zero-lag room management, slot reservations, automated prize distribution, and zero-fee withdrawals.
               </p>
               <p>
                 Our vision is to empower mobile gamers with daily competitive scrims, professional esports anti-cheat enforcement, and instant real cash payouts.
               </p>
               <div className="p-3 rounded-xl bg-black/50 border border-red-950/50 text-[11px] font-mono text-slate-400">
-                Official Support: <span className="text-red-400">support@elitex24.com</span>
+                Official Support: <span className="text-red-400">support@firearenapro.com</span>
                 <br />
                 Helpline Timing: 10:00 AM - 10:00 PM IST
               </div>

@@ -427,7 +427,7 @@ export const AuthGate: React.FC = () => {
                 <h3 className="text-base sm:text-lg font-bold text-white font-heading">
                   How to Login & Register Guide
                 </h3>
-                <p className="text-xs text-amber-400 font-mono">FireArena MAX Complete Gamer Manual</p>
+                <p className="text-xs text-amber-400 font-mono">Fire Arena Pro Complete Gamer Manual</p>
               </div>
             </div>
 

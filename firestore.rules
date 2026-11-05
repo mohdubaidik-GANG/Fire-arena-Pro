@@ -56,6 +56,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Match Result Proofs (Screenshot proof submitted by players)
+    match /matchProofs/{proofId} {
+      allow get, list, create: if true;
+      allow update, delete: if isAdmin();
+    }
+
     // Deposit Requests
     match /depositRequests/{depositId} {
       allow get, list, create: if true;

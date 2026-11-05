@@ -1,5 +1,5 @@
-// FireArena MAX Progressive Web App Service Worker
-const CACHE_NAME = 'firearena-v1.0.0';
+// Fire Arena Pro Progressive Web App Service Worker
+const CACHE_NAME = 'firearenapro-v1.1.0';
 
 // Essential assets to cache for offline availability
 const PRECACHE_ASSETS = [

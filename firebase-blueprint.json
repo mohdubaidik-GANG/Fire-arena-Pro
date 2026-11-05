@@ -145,6 +145,26 @@
         "createdAt": { "type": "string" }
       },
       "required": ["userId", "amount", "orderId", "status"]
+    },
+    "matchProof": {
+      "title": "MatchProof",
+      "description": "Winning screenshot proof and scorecard submission for tournaments",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tournamentId": { "type": "string" },
+        "matchTitle": { "type": "string" },
+        "userId": { "type": "string" },
+        "userIgn": { "type": "string" },
+        "freeFireUid": { "type": "string" },
+        "kills": { "type": "number" },
+        "rank": { "type": "number" },
+        "screenshotUrl": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["tournamentId", "userId", "userIgn", "freeFireUid", "screenshotUrl", "status"]
     }
   },
   "firestore": {
@@ -163,6 +183,10 @@
     "/matches/{matchId}": {
       "schema": "tournament",
       "description": "Matches mirror collection"
+    },
+    "/matchProofs/{proofId}": {
+      "schema": "matchProof",
+      "description": "Player scorecard and winning proof screenshots"
     },
     "/tournaments/{tournamentId}/registrations/{registrationId}": {
       "schema": "registration",

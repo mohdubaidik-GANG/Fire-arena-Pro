@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { X, Trophy, Crosshair, AlertCircle, CheckCircle2, ArrowRight, ShieldCheck, Wallet } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { X, Trophy, Crosshair, AlertCircle, CheckCircle2, ArrowRight, ShieldCheck, Wallet, Grid } from 'lucide-react';
 import { doc, runTransaction, collection, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Tournament, TournamentRegistration } from '../types';
+import { sound } from '../utils/audio';
 
 interface JoinMatchModalProps {
   tournament: Tournament | null;
@@ -24,6 +25,34 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Compute occupied slots
+  const occupiedSlotsMap = useMemo(() => {
+    const map = new Map<number, string>();
+    if (!tournament?.joinedPlayers) return map;
+    tournament.joinedPlayers.forEach((player, idx) => {
+      const slotNum = player.slotNumber || (idx + 1);
+      map.set(slotNum, player.ign || 'Player');
+    });
+    return map;
+  }, [tournament?.joinedPlayers]);
+
+  // Find first available slot
+  const defaultAvailableSlot = useMemo(() => {
+    if (!tournament) return 1;
+    const max = tournament.maxSlots || 48;
+    for (let i = 1; i <= max; i++) {
+      if (!occupiedSlotsMap.has(i)) return i;
+    }
+    return 1;
+  }, [tournament, occupiedSlotsMap]);
+
+  const [selectedSlot, setSelectedSlot] = useState<number>(defaultAvailableSlot);
+
+  // Sync selectedSlot when tournament changes
+  React.useEffect(() => {
+    setSelectedSlot(defaultAvailableSlot);
+  }, [defaultAvailableSlot]);
+
   if (!isOpen || !tournament || !user || !profile) return null;
 
   const currentJoined = tournament.joinedPlayers ? tournament.joinedPlayers.length : 0;
@@ -33,6 +62,12 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
   const totalAvailable = depositBal + winningsBal;
 
   const hasEnoughFunds = totalAvailable >= entryFee;
+
+  const handleSelectSlot = (slotNum: number) => {
+    if (occupiedSlotsMap.has(slotNum)) return;
+    sound.playClick();
+    setSelectedSlot(slotNum);
+  };
 
   const handleJoin = async () => {
     // 1. Duplicate Registration Prevention
@@ -44,6 +79,12 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
     // 2. Slot Capacity Check
     if (currentJoined >= tournament.maxSlots) {
       alert("Match slots full!");
+      return;
+    }
+
+    // 3. Selected Slot Taken Check
+    if (occupiedSlotsMap.has(selectedSlot)) {
+      setError(`Slot #${selectedSlot} has just been occupied by another player. Please pick a different slot.`);
       return;
     }
 
@@ -94,6 +135,7 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
         uid: user.uid,
         ign: profile.ign || (user as any).displayName || 'Gamer',
         email: user.email || '',
+        slotNumber: selectedSlot,
         joinedAt: new Date().toISOString(),
       };
 
@@ -129,7 +171,7 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
           userEmail: user.email || '',
           userIgn: profile.ign,
           userFreeFireUid: profile.freeFireUid,
-          slotNumber: currentJoined + 1,
+          slotNumber: selectedSlot,
           entryFeePaid: entryFee,
           registeredAt: new Date().toISOString(),
         };
@@ -138,6 +180,7 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
         console.warn('Subcollection registration note:', subErr);
       }
 
+      sound.playCoin();
       onSuccess();
       onClose();
     } catch (err: unknown) {
@@ -149,18 +192,21 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
     }
   };
 
+  const totalSlotsCount = tournament.maxSlots || 48;
+  const slotsList = Array.from({ length: totalSlotsCount }, (_, i) => i + 1);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
-      <div className="w-full max-w-md bg-[#0e0e18] border border-amber-500/30 rounded-2xl shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-150">
+      <div className="w-full max-w-lg bg-[#0b0c10] border border-red-900/60 rounded-2xl shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800 bg-[#121222]">
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-red-950/60 bg-[#120e18]">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
+            <div className="w-9 h-9 rounded-xl bg-red-600/15 border border-red-600/30 flex items-center justify-center text-red-400">
               <Crosshair className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white font-heading">Confirm Entry</h2>
-              <p className="text-xs text-slate-400">Join Free Fire MAX Tournament</p>
+              <h2 className="text-base font-bold text-white font-heading">Confirm Entry & Pick Slot</h2>
+              <p className="text-xs text-slate-400">Fire Arena Pro Esports Tournament</p>
             </div>
           </div>
           <button
@@ -171,9 +217,9 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 overflow-y-auto space-y-4">
           {/* Match Info Summary */}
-          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2">
+          <div className="p-3.5 rounded-xl bg-slate-900/80 border border-red-950/50 space-y-2">
             <h3 className="text-sm font-bold text-white font-heading">{tournament.title}</h3>
             <div className="flex items-center justify-between text-xs text-slate-400">
               <span>Map: <strong className="text-slate-200">{tournament.map}</strong></span>
@@ -183,9 +229,9 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
           </div>
 
           {/* Gamer Credentials Confirmation */}
-          <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-1">
+          <div className="p-3 rounded-xl bg-black/50 border border-slate-800 text-xs space-y-1">
             <span className="text-[10px] uppercase font-semibold text-slate-400 block tracking-wider">
-              Registered Game Identity
+              Free Fire In-Game Identity
             </span>
             <div className="flex items-center justify-between font-mono">
               <span className="text-slate-300">IGN: <strong className="text-amber-400">{profile.ign}</strong></span>
@@ -193,24 +239,77 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
             </div>
           </div>
 
+          {/* ================= SLOT BOOKING GRID ================= */}
+          <div className="p-3.5 rounded-xl bg-[#0e0f18] border border-red-950/60 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-white font-heading">
+                <Grid className="w-4 h-4 text-amber-400" />
+                <span>Select Your Room Slot:</span>
+              </div>
+              <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/30">
+                Slot #{selectedSlot} Selected
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3 text-[10px] text-slate-400 font-mono">
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-emerald-500/80" /> Available
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-amber-500" /> Selected
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-slate-800 border border-slate-700" /> Occupied
+              </span>
+            </div>
+
+            {/* Grid of Slots */}
+            <div className="grid grid-cols-6 sm:grid-cols-8 gap-1.5 max-h-40 overflow-y-auto p-1 bg-black/40 rounded-lg border border-slate-900">
+              {slotsList.map((slotNum) => {
+                const isOccupied = occupiedSlotsMap.has(slotNum);
+                const isSelected = selectedSlot === slotNum;
+                const occupantIgn = occupiedSlotsMap.get(slotNum);
+
+                return (
+                  <button
+                    key={slotNum}
+                    type="button"
+                    disabled={isOccupied}
+                    onClick={() => handleSelectSlot(slotNum)}
+                    title={isOccupied ? `Slot ${slotNum}: ${occupantIgn}` : `Choose Slot ${slotNum}`}
+                    className={`h-9 rounded-lg font-mono text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                      isSelected
+                        ? 'bg-gradient-to-tr from-amber-500 to-orange-500 text-black shadow-md shadow-amber-500/30 scale-105 border-2 border-amber-300'
+                        : isOccupied
+                        ? 'bg-slate-900/80 text-slate-600 border border-slate-800/80 cursor-not-allowed opacity-60'
+                        : 'bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-400 border border-emerald-800/40'
+                    }`}
+                  >
+                    <span>{slotNum}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Pricing & Wallet Deduction Breakdown */}
           <div className="p-3.5 rounded-xl bg-black/50 border border-slate-800 space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-slate-400">Tournament Entry Fee:</span>
-              <span className="font-mono font-bold text-white text-sm">₹{entryFee}</span>
+              <span className="font-mono font-bold text-white text-sm">🪙 {entryFee} Coins</span>
             </div>
             <div className="flex items-center justify-between text-slate-400">
               <span>Your Deposit Cash:</span>
-              <span className="font-mono text-slate-200">₹{depositBal}</span>
+              <span className="font-mono text-slate-200">🪙 {depositBal}</span>
             </div>
             <div className="flex items-center justify-between text-slate-400">
               <span>Your Winnings Cash:</span>
-              <span className="font-mono text-emerald-400">₹{winningsBal}</span>
+              <span className="font-mono text-emerald-400">🪙 {winningsBal}</span>
             </div>
             <div className="pt-2 border-t border-slate-800 flex items-center justify-between font-semibold">
               <span className="text-slate-300">Total Usable Balance:</span>
               <span className={`font-mono ${hasEnoughFunds ? 'text-emerald-400' : 'text-red-400'}`}>
-                ₹{totalAvailable}
+                🪙 {totalAvailable}
               </span>
             </div>
           </div>
@@ -225,11 +324,12 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
           {!hasEnoughFunds ? (
             <div className="space-y-2 pt-1">
               <p className="text-xs text-amber-300 text-center">
-                You need ₹{entryFee - totalAvailable} more to join this match.
+                You need 🪙 {entryFee - totalAvailable} more coins to join this match.
               </p>
               <button
                 type="button"
                 onClick={() => {
+                  sound.playClick();
                   onClose();
                   onOpenDeposit();
                 }}
@@ -244,10 +344,10 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
               type="button"
               onClick={handleJoin}
               disabled={isJoining}
-              className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+              className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 hover:from-red-500 hover:to-amber-400 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>{isJoining ? 'Securing Slot...' : `Pay ₹${entryFee} & Confirm Slot`}</span>
+              <span>{isJoining ? 'Securing Slot...' : `Book Slot #${selectedSlot} · Pay 🪙 ${entryFee}`}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           )}

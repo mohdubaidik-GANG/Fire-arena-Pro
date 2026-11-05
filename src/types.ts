@@ -45,7 +45,23 @@ export interface JoinedPlayer {
   uid: string;
   ign: string;
   email?: string;
+  slotNumber?: number;
   joinedAt?: string;
+}
+
+export interface MatchProof {
+  id: string;
+  tournamentId: string;
+  matchTitle: string;
+  userId: string;
+  userIgn: string;
+  freeFireUid: string;
+  kills: number;
+  rank?: number;
+  screenshotUrl: string;
+  notes?: string;
+  status: 'pending' | 'verified' | 'rejected';
+  createdAt: string;
 }
 
 export interface Tournament {
@@ -130,7 +146,7 @@ export interface WithdrawalRequest {
 
 export interface AdminSettings {
   upiId: string; // e.g. "firearenapay@okaxis"
-  upiName: string; // e.g. "FireArena MAX Esports"
+  upiName: string; // e.g. "Fire Arena Pro"
   qrCodeUrl: string; // Dynamic or custom QR URL
   supportWhatsapp: string;
   minDeposit: number;

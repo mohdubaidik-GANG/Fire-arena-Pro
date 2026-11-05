@@ -50,7 +50,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   // Settings from Admin
   const [adminSettings, setAdminSettings] = useState<AdminSettings>({
     upiId: '9005939633@ptyes',
-    upiName: 'FireArena MAX Esports',
+    upiName: 'Fire Arena Pro',
     qrCodeUrl: '',
     supportWhatsapp: '919876543210',
     minDeposit: 100,
@@ -129,7 +129,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   // Generate dynamic UPI deep link with clean VPA and raw '@'
   const currentUpiUri = generateUpiUrl({
     pa: cleanPayeeVpa,
-    pn: adminSettings.upiName || 'FireArena MAX Esports',
+    pn: adminSettings.upiName || 'Fire Arena Pro',
     am: currentEffectiveDepositAmount > 0 ? currentEffectiveDepositAmount : undefined,
     tn: 'AddCoins',
   });
@@ -341,7 +341,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-white font-heading">
-                  EliteX24 Esports Wallet
+                  Fire Arena Pro Esports Wallet
                 </h2>
                 <span className="px-2 py-0.5 rounded bg-red-600/20 text-red-400 border border-red-600/30 text-[10px] font-mono font-bold uppercase">
                   Dual Wallet

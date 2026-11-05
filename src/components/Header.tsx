@@ -84,7 +84,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenWallet, onOpenProfile, onL
 
           {/* Customer Support Icon (🎧) */}
           <a
-            href="https://wa.me/919876543210?text=Hi%20EliteX24%20Support,%20I%20need%20help%20with%20tournaments"
+            href="https://wa.me/919876543210?text=Hi%20Fire%20Arena%20Pro%20Support,%20I%20need%20help%20with%20tournaments"
             target="_blank"
             rel="noreferrer"
             className="w-8 h-8 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-800 flex items-center justify-center text-slate-300 hover:text-red-400 transition-colors cursor-pointer"

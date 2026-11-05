@@ -57,7 +57,7 @@ export const MatchRulesModal: React.FC<MatchRulesModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white font-heading truncate max-w-[240px] sm:max-w-xs">
-                  {tournament ? tournament.title : 'EliteX24 Esports Rules & Guidelines'}
+                  {tournament ? tournament.title : 'Fire Arena Pro Esports Rules & Guidelines'}
                 </h3>
               </div>
               <p className="text-[11px] text-red-400 font-mono">

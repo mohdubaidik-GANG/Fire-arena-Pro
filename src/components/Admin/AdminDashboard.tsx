@@ -86,7 +86,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // Admin Settings State
   const [settings, setSettings] = useState<AdminSettings>({
     upiId: '9005939633@ptyes',
-    upiName: 'FireArena MAX Esports',
+    upiName: 'Fire Arena Pro',
     qrCodeUrl: '',
     supportWhatsapp: '919876543210',
     minDeposit: 20,
@@ -587,7 +587,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-black font-heading text-white tracking-tight uppercase">
-                  ELITEX24 <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-amber-400">COMMAND CENTER</span>
+                  FIRE-ARENA-PRO <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-amber-400">COMMAND CENTER</span>
                 </h1>
                 <span className="px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/40 text-[10px] font-mono font-bold uppercase tracking-wider">
                   Super Admin
@@ -701,7 +701,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-black font-heading text-white uppercase tracking-wide">
-                  EliteX24 Match Engine
+                  Fire Arena Pro Match Engine
                 </h2>
                 <p className="text-xs text-slate-400">
                   Manage custom rooms, unlock real-time credentials, and auto-disburse kill & rank prizes across 12 game modes.
@@ -1291,7 +1291,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   value={settings.upiName}
                   onChange={(e) => setSettings({ ...settings, upiName: e.target.value })}
                   required
-                  placeholder="e.g. FireArena MAX Esports"
+                  placeholder="e.g. Fire Arena Pro"
                   className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -1588,7 +1588,7 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md overflow-y-auto">
       <div className="w-full max-w-lg bg-[#090a14] border border-red-950/80 rounded-2xl p-5 sm:p-6 shadow-2xl relative my-auto">
         <h3 className="text-base font-black text-white font-heading uppercase tracking-wide mb-4">
-          Create New EliteX24 Match
+          Create New Fire Arena Pro Match
         </h3>
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           <div>

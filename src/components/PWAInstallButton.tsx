@@ -17,7 +17,7 @@ export const PWAInstallButton: React.FC<{ className?: string }> = ({ className =
       <button
         onClick={install}
         className={`h-9 px-3 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer whitespace-nowrap ${className}`}
-        title="Install FireArena MAX app on your device"
+        title="Install Fire Arena Pro app on your device"
       >
         <Download className="w-3.5 h-3.5 stroke-[2.5]" />
         <span>Install App</span>

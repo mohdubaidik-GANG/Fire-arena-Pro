@@ -8,12 +8,12 @@
  */
 export function generateUpiUrl(params: {
   pa: string; // Payee VPA / UPI ID (e.g. "9005939633@ptyes")
-  pn?: string; // Payee Name (e.g. "FireArena MAX Esports")
+  pn?: string; // Payee Name (e.g. "Fire Arena Pro")
   am?: number | string; // Amount in INR
   cu?: string; // Currency
   tn?: string; // Transaction note
 }): string {
-  const { pa, pn = 'FireArena MAX Esports', am, cu = 'INR', tn = 'AddCoins' } = params;
+  const { pa, pn = 'Fire Arena Pro', am, cu = 'INR', tn = 'AddCoins' } = params;
 
   // 1. Ensure payee VPA is clean and '@' is NEVER encoded to '%40'
   let payeeVpa = (pa || '9005939633@ptyes').trim();
@@ -26,7 +26,7 @@ export function generateUpiUrl(params: {
   payeeVpa = payeeVpa.replace(/%40/gi, '@');
 
   // 2. Payee Name & Transaction Note
-  const payeeName = encodeURIComponent((pn || 'FireArena MAX Esports').trim());
+  const payeeName = encodeURIComponent((pn || 'Fire Arena Pro').trim());
   const note = encodeURIComponent((tn || 'AddCoins').trim());
 
   // 3. Amount formatting (e.g. 50 or 50.00)

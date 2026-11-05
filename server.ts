@@ -47,7 +47,7 @@ app.post('/api/send-redeem-code', async (req, res) => {
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; background-color: #0c0c16; color: #f1f5f9; padding: 24px; border-radius: 12px; max-width: 550px; margin: 0 auto; border: 1px solid #f59e0b;">
         <div style="text-align: center; margin-bottom: 20px;">
-          <h1 style="color: #f59e0b; margin: 0; font-size: 26px; letter-spacing: 1px;">FIREARENA MAX</h1>
+          <h1 style="color: #f59e0b; margin: 0; font-size: 26px; letter-spacing: 1px;">FIRE ARENA PRO</h1>
           <p style="color: #94a3b8; font-size: 13px; margin-top: 4px;">Official Esports Tournament Payout</p>
         </div>
 
@@ -56,7 +56,7 @@ app.post('/api/send-redeem-code', async (req, res) => {
             Congratulations <strong style="color: #f59e0b;">${ign || 'Gamer'}</strong>!
           </p>
           <p style="font-size: 13px; margin: 0; color: #94a3b8; line-height: 1.5;">
-            Your withdrawal request of <strong style="color: #10b981;">₹${amount}</strong> from FireArena MAX has been verified and processed by the administration.
+            Your withdrawal request of <strong style="color: #10b981;">₹${amount}</strong> from Fire Arena Pro has been verified and processed by the administration.
           </p>
         </div>
 
@@ -74,13 +74,13 @@ app.post('/api/send-redeem-code', async (req, res) => {
         </div>
 
         <div style="text-align: center; margin-top: 24px; font-size: 11px; color: #64748b;">
-          &copy; ${new Date().getFullYear()} FireArena MAX Esports. Automated Payout Dispatch.
+          &copy; ${new Date().getFullYear()} Fire Arena Pro Esports. Automated Payout Dispatch.
         </div>
       </div>
     `;
 
     const info = await transporter.sendMail({
-      from: '"FireArena MAX Esports" <payouts@firearenamax.com>',
+      from: '"Fire Arena Pro Esports" <payouts@firearenapro.com>',
       to: toEmail,
       subject: `🏆 Free Fire MAX Payout: Google Play Redeem Code (₹${amount})`,
       text: `Congratulations ${ign || 'Gamer'}! Here is your Google Play Redeem Code for ₹${amount}: ${redeemCode}`,
@@ -305,7 +305,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`FireArena MAX Server running at http://0.0.0.0:${PORT}`);
+    console.log(`Fire Arena Pro Server running at http://0.0.0.0:${PORT}`);
   });
 }
 
