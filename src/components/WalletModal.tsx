@@ -53,7 +53,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     upiName: 'FireArena MAX Esports',
     qrCodeUrl: '',
     supportWhatsapp: '919876543210',
-    minDeposit: 1,
+    minDeposit: 100,
     minWithdrawal: 50,
     rules: 'Deposit is credited within 5-15 mins of UTR verification. Withdrawals processed 24/7.',
   });
@@ -147,8 +147,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setDepositSuccessMsg(null);
 
     const amount = Number(currentEffectiveDepositAmount);
-    if (!amount || isNaN(amount) || amount < 1 || amount > 10000) {
-      const errorMsg = "Amount ₹1 se ₹10,000 ke beech hona chahiye!";
+    if (!amount || isNaN(amount) || amount < 100 || amount > 10000) {
+      const errorMsg = "Amount ₹100 se ₹10,000 ke beech hona chahiye!";
       setDepositError(errorMsg);
       try {
         if (typeof window !== 'undefined' && typeof window.alert === 'function') {
@@ -235,11 +235,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         // Immediately redirect the user to checkout URL
         window.location.href = paymentUrl;
       } else {
-        const rawMsg = data?.message || 'Payment gateway failed to provide checkout URL.';
-        if (typeof rawMsg === 'string' && rawMsg.toLowerCase().includes('not suitable this channel')) {
-          throw new Error('This merchant channel requires an amount of ₹100 or higher (e.g. ₹100, ₹150, ₹200, ₹300, ₹500, ₹1000). Please select one of the preset amounts.');
-        }
-        throw new Error(rawMsg);
+        throw new Error(data?.message || 'Payment gateway failed to provide checkout URL.');
       }
     } catch (err: unknown) {
       console.error('Rupayex payment checkout failed:', err);
@@ -455,19 +451,19 @@ export const WalletModal: React.FC<WalletModalProps> = ({
               {/* Amount Input & Quick Select Chips */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                  Deposit Amount (₹1 - ₹10,000)
+                  Deposit Amount (₹100 - ₹10,000)
                 </label>
                 <div className="relative mb-3">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-400 font-mono font-bold text-base">₹</span>
                   <input
                     type="number"
-                    placeholder="Enter custom amount (₹1 - ₹10,000)"
+                    placeholder="Enter custom amount (₹100 - ₹10,000)"
                     value={customAmount}
                     onChange={(e) => {
                       setCustomAmount(e.target.value);
                       setDepositError(null);
                     }}
-                    min={1}
+                    min={100}
                     max={10000}
                     className="w-full h-12 pl-8 pr-4 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-red-500 shadow-inner"
                   />
@@ -477,15 +473,15 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <div>
                   <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
                     <span>Quick Select Amount</span>
-                    <span className="text-[10px] text-slate-500 font-mono">Min ₹1 • Max ₹10,000</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Min ₹100 • Max ₹10,000</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {[
-                      { label: '+₹10', value: 10 },
-                      { label: '+₹50', value: 50 },
                       { label: '+₹100', value: 100 },
+                      { label: '+₹200', value: 200 },
                       { label: '+₹500', value: 500 },
                       { label: '+₹1,000', value: 1000 },
+                      { label: '+₹2,000', value: 2000 },
                       { label: '+₹5,000', value: 5000 },
                       { label: '+₹10,000', value: 10000 },
                     ].map((chip) => {
@@ -550,16 +546,16 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <button
                   type="button"
                   onClick={handleProceedToPayRupayex}
-                  disabled={depositSubmitting || currentEffectiveDepositAmount < 1 || currentEffectiveDepositAmount > 10000}
+                  disabled={depositSubmitting || currentEffectiveDepositAmount < 100 || currentEffectiveDepositAmount > 10000}
                   className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-red-950/80 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 border border-red-500/40"
                 >
                   <Lock className="w-4 h-4 text-white" />
                   <span>
                     {depositSubmitting
                       ? 'Connecting Gateway...'
-                      : currentEffectiveDepositAmount >= 1 && currentEffectiveDepositAmount <= 10000
+                      : currentEffectiveDepositAmount >= 100 && currentEffectiveDepositAmount <= 10000
                       ? `Proceed to Pay ₹${currentEffectiveDepositAmount}`
-                      : 'Enter Amount (₹1 - ₹10,000)'}
+                      : 'Enter Amount (₹100 - ₹10,000)'}
                   </span>
                   <ExternalLink className="w-3.5 h-3.5 text-white/80" />
                 </button>

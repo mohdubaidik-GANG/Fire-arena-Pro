@@ -314,6 +314,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
           orderId: orderId,
           status: 'COMPLETED',
           gateway: 'RUPAYEX',
+          method: 'RUPAYEX',
           createdAt: new Date().toISOString()
         };
 
