@@ -10,7 +10,11 @@ export interface UserProfile {
   matchesPlayed?: number;
   tournamentsWon?: number;
   depositBalance: number;
+  winningBalance?: number;
   winningsBalance: number;
+  referralCode?: string;
+  referredBy?: string | null;
+  totalReferrals?: number;
   isBanned: boolean;
   createdAt: string;
   updatedAt: string;

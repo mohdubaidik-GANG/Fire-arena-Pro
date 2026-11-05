@@ -1167,61 +1167,93 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             {/* Refer & Earn Card */}
             <div className="p-5 sm:p-6 rounded-2xl bg-[#090a14] border border-red-950/80 space-y-4 shadow-xl">
               <div className="space-y-1">
-                <span className="text-[10px] font-mono font-bold text-red-400 uppercase tracking-wider block">
+                <span className="text-[10px] font-mono font-bold text-amber-400 uppercase tracking-wider block">
                   Squad Referral Program
                 </span>
-                <h3 className="text-base font-bold text-white font-heading">
-                  Invite Squad Members & Earn 🪙 10 Per Friend
+                <h3 className="text-base sm:text-lg font-bold text-white font-heading">
+                  Invite Friends & Earn ₹10 Cash Bonus Each
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Share your referral link with your gaming friends. When they register and join their first match, you both receive bonus coins!
+                  Apne Free Fire squad members ko invite karein. Wo register karte hi ₹10 welcome bonus paayenge, aur unke judte hi aapko bhi instant ₹10 deposit balance milega!
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-black/60 border border-red-950/60 flex items-center justify-between gap-3">
+              {/* Referral Statistics */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-black/60 border border-red-950/60">
+                  <span className="text-[10px] text-slate-400 font-mono block">Total Referrals</span>
+                  <span className="text-xl font-black font-mono text-white">
+                    {profile?.totalReferrals || 0} <span className="text-xs text-slate-500 font-normal">Friends</span>
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-black/60 border border-red-950/60">
+                  <span className="text-[10px] text-slate-400 font-mono block">Total Bonus Earned</span>
+                  <span className="text-xl font-black font-mono text-emerald-400">
+                    ₹{(profile?.totalReferrals || 0) * 10}
+                  </span>
+                </div>
+              </div>
+
+              {/* Referral Code Box with Copy Code & Share on WhatsApp */}
+              <div className="p-4 rounded-xl bg-black/70 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <span className="text-[10px] text-slate-400 font-mono block">Your Referral Code:</span>
-                  <span className="text-base font-black font-mono text-red-400 tracking-wider">
-                    ELITEX-{user?.uid ? user.uid.slice(-6).toUpperCase() : 'VIP2024'}
+                  <span className="text-[10px] text-amber-400/90 font-mono uppercase tracking-wider block">
+                    Your Official Referral Code:
+                  </span>
+                  <span className="text-xl font-black font-mono text-amber-400 tracking-widest select-all">
+                    {profile?.referralCode || 'FIRE8492'}
                   </span>
                 </div>
 
-                <button
-                  onClick={() => {
-                    const refCode = user?.uid ? user.uid.slice(-6).toUpperCase() : 'VIP2024';
-                    const link = `${window.location.origin}/?ref=ELITEX-${refCode}`;
-                    navigator.clipboard.writeText(link);
-                    showToast('Referral link copied to clipboard!');
-                  }}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-md shadow-red-600/30 cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Link</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const code = profile?.referralCode || 'FIRE8492';
+                      navigator.clipboard.writeText(code);
+                      showToast(`Referral code ${code} copied!`);
+                    }}
+                    className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Code</span>
+                  </button>
+
+                  <a
+                    href={`https://wa.me/?text=${encodeURIComponent(
+                      `Join Fire Arena Pro using my referral code *${profile?.referralCode || 'FIRE8492'}* and get ₹10 instant signup bonus! Play Free Fire MAX tournaments & win cash: ${window.location.origin}`
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/30 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>Share on WhatsApp</span>
+                  </a>
+                </div>
               </div>
 
               {/* Referral Steps */}
               <div className="grid grid-cols-3 gap-2 text-center text-xs pt-2 border-t border-red-950/50">
                 <div className="p-2.5 rounded-xl bg-[#0c0d18] border border-red-950/40">
-                  <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center mx-auto mb-1">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold text-[10px] flex items-center justify-center mx-auto mb-1">
                     1
                   </span>
-                  <span className="font-bold text-white block">Share Link</span>
-                  <span className="text-[10px] text-slate-500">Send to squad</span>
+                  <span className="font-bold text-white block">Share Code</span>
+                  <span className="text-[10px] text-slate-500">Send on WhatsApp</span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-[#0c0d18] border border-red-950/40">
-                  <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center mx-auto mb-1">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold text-[10px] flex items-center justify-center mx-auto mb-1">
                     2
                   </span>
-                  <span className="font-bold text-white block">Friend Joins</span>
-                  <span className="text-[10px] text-slate-500">Plays 1st match</span>
+                  <span className="font-bold text-white block">Friend Signs Up</span>
+                  <span className="text-[10px] text-emerald-400 font-semibold">Gets ₹10 Bonus</span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-[#0c0d18] border border-red-950/40">
-                  <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center mx-auto mb-1">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold text-[10px] flex items-center justify-center mx-auto mb-1">
                     3
                   </span>
-                  <span className="font-bold text-white block">Get Coins</span>
-                  <span className="text-[10px] text-amber-400 font-bold">🪙 10 Instantly</span>
+                  <span className="font-bold text-white block">You Earn</span>
+                  <span className="text-[10px] text-amber-400 font-bold">₹10 Instant</span>
                 </div>
               </div>
             </div>

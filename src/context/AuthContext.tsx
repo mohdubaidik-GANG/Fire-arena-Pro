@@ -1,6 +1,18 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, where, getDocs } from 'firebase/firestore';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  onSnapshot,
+  collection,
+  query,
+  where,
+  getDocs,
+  increment,
+  addDoc,
+} from 'firebase/firestore';
 import {
   auth,
   db,
@@ -13,6 +25,16 @@ import {
   OperationType,
 } from '../firebase';
 import { UserProfile, SUPER_ADMIN_EMAILS } from '../types';
+
+export const generateUserReferralCode = (ign: string): string => {
+  const cleanPrefix = (ign || 'FIRE')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .slice(0, 4)
+    .toUpperCase()
+    .padEnd(4, 'X');
+  const randomDigits = Math.floor(1000 + Math.random() * 9000);
+  return `${cleanPrefix}${randomDigits}`;
+};
 
 export interface AuthContextType {
   user: User | { uid: string; email?: string; displayName?: string } | null;
@@ -30,8 +52,8 @@ export interface AuthContextType {
   registerWithCredentials: (
     ign: string,
     freeFireUid: string,
-    phone: string,
-    password: string
+    password: string,
+    referralCode?: string
   ) => Promise<void>;
   logout: () => Promise<void>;
   saveInitialProfile: (ign: string, freeFireUid: string) => Promise<void>;
@@ -102,6 +124,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data() as UserProfile;
+          if (!data.referralCode) {
+            const newRefCode = generateUserReferralCode(data.ign || 'FIRE');
+            updateDoc(userRef, { referralCode: newRefCode, totalReferrals: data.totalReferrals || 0 }).catch(() => {});
+            data.referralCode = newRefCode;
+          }
           setProfile(data);
           if (!isWhitelistedAdmin && (!data.ign || !data.freeFireUid)) {
             setNeedsProfileSetup(true);
@@ -526,18 +553,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  // 4. Register New User with UID & Password
+  // 4. Register New User with UID, Password & Optional Referral Code
   const registerWithCredentials = async (
     ign: string,
     freeFireUid: string,
-    phone: string,
-    password: string
+    password: string,
+    referralCode?: string
   ) => {
     setLoading(true);
     const cleanIgn = ign.trim();
     const cleanUid = freeFireUid.trim();
-    const cleanPhone = phone.trim();
     const cleanPass = password.trim();
+    const enteredRefCode = (referralCode || '').trim().toUpperCase();
 
     if (!cleanIgn || cleanIgn.length < 2) {
       setLoading(false);
@@ -547,11 +574,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!/^\d{8,11}$/.test(cleanUid)) {
       setLoading(false);
       throw new Error('Free Fire UID must be a numeric ID between 8 and 11 digits.');
-    }
-
-    if (cleanPhone && !/^\d{10}$/.test(cleanPhone)) {
-      setLoading(false);
-      throw new Error('Mobile number must be a valid 10-digit number.');
     }
 
     if (cleanPass.length < 4) {
@@ -570,23 +592,107 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         );
       }
 
+      // Check Referral Code if provided
+      let isReferralValid = false;
+      let referrerUid: string | null = null;
+      let referrerData: UserProfile | null = null;
+
+      if (enteredRefCode) {
+        const refQuery = query(collection(db, 'users'), where('referralCode', '==', enteredRefCode));
+        const refSnap = await getDocs(refQuery);
+        if (refSnap.empty) {
+          setLoading(false);
+          throw new Error("Invalid Referral Code! Check karke dobara daalein ya ise khali chhod dein.");
+        }
+        const referrerDoc = refSnap.docs[0];
+        referrerUid = referrerDoc.id;
+        referrerData = referrerDoc.data() as UserProfile;
+        isReferralValid = true;
+      }
+
+      // Generate unique referral code for this new user
+      let generatedReferralCode = generateUserReferralCode(cleanIgn);
+      const codeCheck = await getDocs(query(collection(db, 'users'), where('referralCode', '==', generatedReferralCode)));
+      if (!codeCheck.empty) {
+        generatedReferralCode = `${cleanIgn.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase().padEnd(4, 'X')}${Math.floor(1000 + Math.random() * 9000)}`;
+      }
+
       // Generate unique user UID
       const newUid = `ff_${cleanUid}_${Date.now().toString(36)}`;
+      const initialDeposit = isReferralValid ? 10 : 0;
       const newProfile: UserProfile = {
         uid: newUid,
         email: `${cleanUid}@gamer.firearena`,
         ign: cleanIgn,
         freeFireUid: cleanUid,
-        phone: cleanPhone || '',
         password: cleanPass,
-        depositBalance: 0,
+        referralCode: generatedReferralCode,
+        depositBalance: initialDeposit,
+        winningBalance: 0,
         winningsBalance: 0,
+        totalKills: 0,
+        matchesPlayed: 0,
+        tournamentsWon: 0,
+        totalReferrals: 0,
+        referredBy: isReferralValid ? referrerUid : null,
         isBanned: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
 
       await setDoc(doc(db, 'users', newUid), newProfile);
+
+      // If valid referral code: reward referrer and log wallet transactions for both
+      if (isReferralValid && referrerUid) {
+        const referrerRef = doc(db, 'users', referrerUid);
+        await updateDoc(referrerRef, {
+          depositBalance: increment(10),
+          totalReferrals: increment(1),
+          updatedAt: new Date().toISOString(),
+        });
+
+        // 1. New user wallet history & deposit record
+        await addDoc(collection(db, 'walletHistory'), {
+          userId: newUid,
+          type: 'REFERRAL_BONUS',
+          description: 'Referral Bonus ₹10 (Signup Reward)',
+          amount: 10,
+          createdAt: new Date().toISOString(),
+        });
+        await addDoc(collection(db, 'depositRequests'), {
+          userId: newUid,
+          userEmail: newProfile.email,
+          userIgn: cleanIgn,
+          amount: 10,
+          gateway: 'REFERRAL_BONUS',
+          status: 'COMPLETED',
+          orderId: `REF_WELCOME_${Date.now()}`,
+          adminNote: `Welcome referral bonus via code ${enteredRefCode}`,
+          createdAt: new Date().toISOString(),
+          reviewedAt: new Date().toISOString(),
+        });
+
+        // 2. Referrer wallet history & deposit record
+        await addDoc(collection(db, 'walletHistory'), {
+          userId: referrerUid,
+          type: 'REFERRAL_BONUS',
+          description: `Referral Bonus ₹10 (Friend ${cleanIgn} Joined)`,
+          amount: 10,
+          createdAt: new Date().toISOString(),
+        });
+        await addDoc(collection(db, 'depositRequests'), {
+          userId: referrerUid,
+          userEmail: referrerData?.email || '',
+          userIgn: referrerData?.ign || 'Player',
+          amount: 10,
+          gateway: 'REFERRAL_BONUS',
+          status: 'COMPLETED',
+          orderId: `REF_REWARD_${Date.now()}`,
+          adminNote: `Referral reward for inviting ${cleanIgn} (Code: ${enteredRefCode})`,
+          createdAt: new Date().toISOString(),
+          reviewedAt: new Date().toISOString(),
+        });
+      }
 
       const gamerUser = {
         uid: newUid,

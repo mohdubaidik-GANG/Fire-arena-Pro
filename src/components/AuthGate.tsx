@@ -9,7 +9,6 @@ import {
   Sparkles,
   Lock,
   User,
-  Phone,
   Key,
   CheckCircle2,
   Eye,
@@ -21,7 +20,8 @@ import {
   HelpCircle,
   MessageCircle,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  Gift
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserProfile } from '../types';
@@ -47,12 +47,12 @@ export const AuthGate: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
 
-  // Register Form States
+  // Register Form States (No Mobile Number - Free Fire IGN, UID, Password, Referral Code)
   const [regIgn, setRegIgn] = useState('');
   const [regFreeFireUid, setRegFreeFireUid] = useState('');
-  const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
+  const [regReferralCode, setRegReferralCode] = useState('');
 
   // Migration / Password Link Modal State
   const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -94,8 +94,8 @@ export const AuthGate: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await registerWithCredentials(regIgn, regFreeFireUid, regPhone, regPassword);
-      setSuccessMsg('Account registered successfully! Welcome to FireArena MAX.');
+      await registerWithCredentials(regIgn, regFreeFireUid, regPassword, regReferralCode);
+      setSuccessMsg('Account registered successfully! Welcome to Fire Arena Pro.');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Registration failed. Please verify details.';
       setErrorMsg(msg);
@@ -335,23 +335,7 @@ export const AuthGate: React.FC = () => {
 
               <div>
                 <label className="block font-semibold text-slate-300 mb-1">
-                  WhatsApp / Mobile Number (For Payouts)
-                </label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
-                  <input
-                    type="tel"
-                    value={regPhone}
-                    onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    placeholder="10-digit PhonePe / WhatsApp number"
-                    className="w-full h-10 pl-10 pr-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-300 mb-1">
-                  Account Password (Min 6 Characters) <span className="text-amber-400">*</span>
+                  Account Password (Min 4 Characters) <span className="text-amber-400">*</span>
                 </label>
                 <div className="relative">
                   <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -359,7 +343,7 @@ export const AuthGate: React.FC = () => {
                     type={showRegPassword ? 'text' : 'password'}
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="Set 6+ character password"
+                    placeholder="Set 4+ character password"
                     required
                     minLength={4}
                     className="w-full h-10 pl-10 pr-10 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
@@ -373,6 +357,32 @@ export const AuthGate: React.FC = () => {
                     {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-slate-300">
+                    Referral Code (Optional)
+                  </label>
+                  <span className="text-[10px] text-amber-400 font-mono font-bold">
+                    +₹10 Instant Bonus
+                  </span>
+                </div>
+                <div className="relative">
+                  <Gift className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-400" />
+                  <input
+                    type="text"
+                    value={regReferralCode}
+                    onChange={(e) => setRegReferralCode(e.target.value.toUpperCase())}
+                    placeholder="Enter friend's invite code"
+                    maxLength={15}
+                    className="w-full h-10 pl-10 pr-3 rounded-xl bg-slate-900 border border-amber-500/30 text-amber-300 placeholder-slate-500 text-xs font-mono uppercase tracking-wider focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <p className="text-[10px] text-emerald-400 mt-1 font-mono font-semibold flex items-center gap-1">
+                  <span>🎁</span>
+                  <span>Dost ka code daalein aur paayein ₹10 instant signup bonus!</span>
+                </p>
               </div>
 
               <button
@@ -488,8 +498,8 @@ export const AuthGate: React.FC = () => {
                     4
                   </div>
                   <div>
-                    <strong className="text-white">Step 4: WhatsApp number aur 6+ character Password enter karein</strong>
-                    <p className="text-slate-400 mt-0.5">Apna mobile number daalein aur yaad rakhne yogya strong password set karein.</p>
+                    <strong className="text-white">Step 4: Password set karein aur Referral Code (Optional) daalein</strong>
+                    <p className="text-slate-400 mt-0.5">Apna 4+ character password set karein aur dost ka referral code daal kar ₹10 instant bonus paayein.</p>
                   </div>
                 </div>
 

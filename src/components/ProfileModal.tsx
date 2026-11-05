@@ -106,6 +106,53 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
             </div>
           </div>
 
+          {/* Referral & Invite Card */}
+          <div className="p-3.5 rounded-xl bg-gradient-to-r from-amber-950/20 via-[#130f1d] to-[#0e0c1a] border border-amber-500/30 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-amber-400 font-mono font-bold uppercase tracking-wider block">
+                  My Referral Code
+                </span>
+                <span className="text-base font-black font-mono text-white tracking-widest">
+                  {profile.referralCode || 'FIRE8492'}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 font-mono block">Referrals / Earned</span>
+                <span className="text-xs font-bold font-mono text-emerald-400">
+                  {profile.totalReferrals || 0} Joined · ₹{(profile.totalReferrals || 0) * 10}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const code = profile.referralCode || 'FIRE8492';
+                  navigator.clipboard.writeText(code);
+                  setSavedSuccess(true);
+                  setTimeout(() => setSavedSuccess(false), 2500);
+                }}
+                className="flex-1 py-1.5 px-3 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5 text-amber-400" />
+                <span>Copy Code</span>
+              </button>
+
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `Join Fire Arena Pro using my referral code *${profile.referralCode || 'FIRE8492'}* and get ₹10 instant signup bonus! Download & Play: ${window.location.origin}`
+                )}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 py-1.5 px-3 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <span>WhatsApp Share</span>
+              </a>
+            </div>
+          </div>
+
           {/* EliteX24 Account Wallet Summary */}
           <div className="p-3.5 rounded-xl bg-gradient-to-r from-red-950/30 to-[#120a1e] border border-red-900/40 flex items-center justify-between gap-3">
             <div>
@@ -136,7 +183,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
           {savedSuccess && (
             <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
               <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span>Gamer credentials updated successfully!</span>
+              <span>Copied / Saved successfully!</span>
             </div>
           )}
 

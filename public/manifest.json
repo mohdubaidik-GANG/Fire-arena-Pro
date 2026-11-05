@@ -1,28 +1,25 @@
 {
-  "name": "Fire Arena Pro",
   "short_name": "FireArena",
-  "id": "/?source=pwa",
+  "name": "Fire Arena Pro",
+  "description": "Premier Free Fire MAX Esports Tournament Platform",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
-  "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#0b0c10",
   "theme_color": "#0b0c10",
-  "lang": "en",
-  "dir": "ltr",
-  "categories": ["sports", "games", "entertainment"],
-  "description": "Free Fire Esports Tournament Platform",
+  "display": "standalone",
+  "orientation": "portrait",
   "icons": [
     {
-      "src": "/logo.png",
-      "sizes": "192x192",
+      "src": "/icon-192.png",
       "type": "image/png",
+      "sizes": "192x192",
       "purpose": "any maskable"
     },
     {
-      "src": "/logo.png",
-      "sizes": "512x512",
+      "src": "/icon-512.png",
       "type": "image/png",
+      "sizes": "512x512",
       "purpose": "any maskable"
     }
   ]

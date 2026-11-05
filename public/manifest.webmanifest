@@ -1,0 +1,26 @@
+{
+  "short_name": "FireArena",
+  "name": "Fire Arena Pro",
+  "description": "Premier Free Fire MAX Esports Tournament Platform",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#0b0c10",
+  "theme_color": "#0b0c10",
+  "display": "standalone",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}
