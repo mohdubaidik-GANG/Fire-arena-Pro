@@ -50,6 +50,12 @@ service cloud.firestore {
       allow create, update, delete: if true;
     }
 
+    // Transactions Collection (Rupayex Auto-Credit & Instant Ledger)
+    match /transactions/{transactionId} {
+      allow get, list, create, update: if true;
+      allow delete: if isAdmin();
+    }
+
     // Deposit Requests
     match /depositRequests/{depositId} {
       allow get, list, create: if true;

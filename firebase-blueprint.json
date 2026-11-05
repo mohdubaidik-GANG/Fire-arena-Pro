@@ -130,12 +130,31 @@
         "role": { "type": "string" }
       },
       "required": ["email", "role"]
+    },
+    "transaction": {
+      "title": "Transaction",
+      "description": "Payment gateway deposit records and instant credit transactions",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "amount": { "type": "number" },
+        "orderId": { "type": "string" },
+        "status": { "type": "string" },
+        "type": { "type": "string" },
+        "gateway": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["userId", "amount", "orderId", "status"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "userProfile",
       "description": "User profiles with wallet balances and gaming credentials"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "transaction",
+      "description": "Payment gateway transactions and ledger"
     },
     "/tournaments/{tournamentId}": {
       "schema": "tournament",

@@ -11,6 +11,7 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Nodemailer API endpoint to dispatch Google Play Redeem Code to user's registered Gmail
 app.post('/api/send-redeem-code', async (req, res) => {
@@ -143,6 +144,126 @@ app.post('/api/rupayex/create-order', async (req, res) => {
     return res.status(500).json({ status: false, error: error.message || 'Payment Gateway proxy failure' });
   }
 });
+
+// Rupayex Backend Webhook Handler (Server-to-Server Instant Auto-Credit)
+const handleRupayexWebhook = async (req: express.Request, res: express.Response) => {
+  try {
+    console.log('[Rupayex Webhook Received]:', req.body);
+    const body = req.body || {};
+
+    const rawStatus = String(body.status || body.payment_status || body.order_status || '').toUpperCase();
+    const isSuccess = rawStatus === 'SUCCESS' || rawStatus === 'COMPLETED' || rawStatus === 'PAID';
+
+    const orderId = String(body.order_id || body.orderId || body.client_txn_id || '').trim();
+    const amount = Number(body.amount || body.order_amount || 0);
+
+    if (!orderId) {
+      console.warn('[Rupayex Webhook] Missing order_id in webhook payload');
+      return res.status(400).json({ status: 'error', message: 'Missing order_id' });
+    }
+
+    if (!isSuccess) {
+      console.log(`[Rupayex Webhook] Order ${orderId} received status: ${rawStatus}`);
+      return res.json({ status: 'ok', message: `Status ${rawStatus} acknowledged` });
+    }
+
+    const firestoreBaseUrl = `https://firestore.googleapis.com/v1/projects/extreme-ripsaw-zxtlg/databases/ai-studio-firearenapro-f9430e16-49a6-42b6-8d93-473ca682eb98/documents`;
+    const apiKey = 'AIzaSyCViuuf83lOW1Es1_9D5HR8rbhMNuBV7Lo';
+
+    // 1. Check if transaction has already been processed in Firestore
+    const checkTxnRes = await fetch(`${firestoreBaseUrl}/transactions/${orderId}?key=${apiKey}`);
+    if (checkTxnRes.ok) {
+      const existingTxn = await checkTxnRes.json();
+      if (existingTxn?.fields?.status?.stringValue === 'COMPLETED') {
+        console.log(`[Rupayex Webhook] Order ${orderId} already credited in Firestore.`);
+        return res.json({ status: 'ok', message: 'Already processed' });
+      }
+    }
+
+    // 2. Extract userId from payload or parse from orderId (TXN_{timestamp}_{userId})
+    let userId = String(body.userId || body.user_id || body.customer_id || '').trim();
+    if (!userId && orderId.startsWith('TXN_')) {
+      const parts = orderId.split('_');
+      userId = parts.slice(2).join('_');
+    }
+
+    if (!userId) {
+      console.warn(`[Rupayex Webhook] Could not determine userId for order ${orderId}`);
+      return res.status(400).json({ status: 'error', message: 'Could not resolve user ID' });
+    }
+
+    // 3. Fetch user document to update balance
+    const userDocRes = await fetch(`${firestoreBaseUrl}/users/${userId}?key=${apiKey}`);
+    let currentDeposit = 0;
+    let userEmail = '';
+    let userIgn = 'Player';
+    if (userDocRes.ok) {
+      const userData = await userDocRes.json();
+      currentDeposit = Number(userData?.fields?.depositBalance?.integerValue || userData?.fields?.depositBalance?.doubleValue || 0);
+      userEmail = userData?.fields?.email?.stringValue || '';
+      userIgn = userData?.fields?.ign?.stringValue || 'Player';
+    }
+
+    const newDepositBalance = currentDeposit + amount;
+
+    // 4. Update user's depositBalance in Firestore
+    await fetch(`${firestoreBaseUrl}/users/${userId}?updateMask.fieldPaths=depositBalance&updateMask.fieldPaths=updatedAt&key=${apiKey}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          depositBalance: { integerValue: String(newDepositBalance) },
+          updatedAt: { stringValue: new Date().toISOString() }
+        }
+      })
+    });
+
+    // 5. Mark transaction record in 'transactions' collection with status COMPLETED
+    await fetch(`${firestoreBaseUrl}/transactions/${orderId}?key=${apiKey}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          orderId: { stringValue: orderId },
+          userId: { stringValue: userId },
+          amount: { integerValue: String(amount) },
+          status: { stringValue: 'COMPLETED' },
+          type: { stringValue: 'DEPOSIT' },
+          gateway: { stringValue: 'RUPAYEX' },
+          createdAt: { stringValue: new Date().toISOString() }
+        }
+      })
+    });
+
+    // 6. Record in depositRequests & walletHistory for user transaction feed
+    await fetch(`${firestoreBaseUrl}/depositRequests?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          userId: { stringValue: userId },
+          userEmail: { stringValue: userEmail },
+          userIgn: { stringValue: userIgn },
+          amount: { integerValue: String(amount) },
+          orderId: { stringValue: orderId },
+          status: { stringValue: 'COMPLETED' },
+          gateway: { stringValue: 'RUPAYEX' },
+          createdAt: { stringValue: new Date().toISOString() },
+          reviewedAt: { stringValue: new Date().toISOString() }
+        }
+      })
+    });
+
+    console.log(`[Rupayex Webhook Success] Successfully credited ₹${amount} to user ${userId} for order ${orderId}`);
+    return res.json({ status: 'ok' });
+  } catch (err: any) {
+    console.error('[Rupayex Webhook Handler Error]:', err);
+    return res.status(500).json({ status: 'error', error: err.message });
+  }
+};
+
+app.post('/api/rupayex-webhook', handleRupayexWebhook);
+app.post('/api/rupayex/webhook', handleRupayexWebhook);
 
 async function startServer() {
   const publicPath = path.resolve(process.cwd(), 'public');

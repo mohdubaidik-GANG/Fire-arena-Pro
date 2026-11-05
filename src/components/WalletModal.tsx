@@ -173,17 +173,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       email: user.email || '',
     };
 
-    const order_id = `TXN_${Date.now()}_${currentUser.ffUid}`;
-    const redirect_url = window.location.origin + '/wallet?payment=success';
+    const order_id = `TXN_${Date.now()}_${currentUser.uid}`;
+    const redirect_url = `${window.location.origin}/wallet?payment=success&order_id=${order_id}&amount=${amount}`;
 
     const orderPayload = {
       user_token: "2cbda25b49468fe8b5b65d535531fe0d",
       instance_id: "I9dwytvqic1793850117",
       amount: Number(amount),
-      order_id: `TXN_${Date.now()}_${currentUser.ffUid}`,
+      order_id: order_id,
       customer_name: currentUser.ign || "Player",
       customer_mobile: currentUser.phone || "9999999999",
-      redirect_url: window.location.origin + "/wallet?payment=success",
+      redirect_url: redirect_url,
     };
 
     // Save pending transaction to localStorage for auto-crediting on redirect return

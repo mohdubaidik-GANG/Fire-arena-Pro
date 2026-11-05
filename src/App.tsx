@@ -38,7 +38,7 @@ import {
   Receipt,
   XCircle
 } from 'lucide-react';
-import { collection, query, onSnapshot, getDocs, setDoc, doc, addDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, query, onSnapshot, getDocs, getDoc, setDoc, doc, addDoc, updateDoc, increment } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
 import { db } from './firebase';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -179,8 +179,12 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     return 'play';
   });
 
-  // Rupayex Payment Success Banner State
+  // Rupayex Payment Success Banner & Popup States
   const [paymentSuccessBanner, setPaymentSuccessBanner] = useState<{
+    amount: number;
+    orderId: string;
+  } | null>(null);
+  const [paymentSuccessPopup, setPaymentSuccessPopup] = useState<{
     amount: number;
     orderId: string;
   } | null>(null);
@@ -257,7 +261,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     return () => clearInterval(timer);
   }, []);
 
-  // Auto-Credit Rupayex Payment Gateway Return (/wallet?payment=success)
+  // Auto-Credit Rupayex Payment Gateway Return (/wallet?payment=success&order_id={id}&amount={amt})
   useEffect(() => {
     if (!user) return;
 
@@ -276,45 +280,70 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       const urlOrderId = urlParams.get('order_id') || urlParams.get('orderId');
       const urlAmount = urlParams.get('amount');
 
-      const orderId = urlOrderId || pendingOrder?.orderId || `TXN_${Date.now()}_${profile?.freeFireUid || user.uid}`;
+      const orderId = String(urlOrderId || pendingOrder?.orderId || `TXN_${Date.now()}_${user.uid}`).trim();
       const amount = Number(urlAmount || pendingOrder?.amount || 0);
-
-      const alreadyCreditedKey = `rupayex_credited_${orderId}`;
-      if (localStorage.getItem(alreadyCreditedKey)) {
-        if (amount > 0 && !paymentSuccessBanner) {
-          setPaymentSuccessBanner({ amount, orderId });
-          setActiveTab('wallet');
-        }
-        return;
-      }
 
       if (amount <= 0) {
         console.warn('[Rupayex] Arrived with payment=success but no valid amount found.');
         return;
       }
 
-      // Mark credited immediately in localStorage to prevent duplicate runs
-      localStorage.setItem(alreadyCreditedKey, 'true');
-      localStorage.removeItem('pending_rupayex_order');
+      const alreadyCreditedKey = `rupayex_credited_${orderId}`;
 
       try {
+        // 1. Check Firestore to ensure this order_id hasn't been credited already (prevent duplicate credits)
+        const txnRef = doc(db, 'transactions', orderId);
+        const txnSnap = await getDoc(txnRef);
+
+        if (txnSnap.exists() && txnSnap.data()?.status === 'COMPLETED') {
+          console.log(`[Rupayex Auto-Credit] Order ${orderId} already credited in Firestore.`);
+          setActiveTab('wallet');
+          setPaymentSuccessBanner({ amount, orderId });
+          setPaymentSuccessPopup({ amount, orderId });
+          localStorage.removeItem('pending_rupayex_order');
+          window.history.replaceState(null, '', '/wallet');
+          return;
+        }
+
+        // Prevent concurrent run within same browser session
+        if (localStorage.getItem(alreadyCreditedKey)) {
+          setActiveTab('wallet');
+          setPaymentSuccessBanner({ amount, orderId });
+          setPaymentSuccessPopup({ amount, orderId });
+          window.history.replaceState(null, '', '/wallet');
+          return;
+        }
+        localStorage.setItem(alreadyCreditedKey, 'true');
+
         console.log(`[Rupayex Auto-Credit] Crediting ₹${amount} to user ${user.uid} for order ${orderId}`);
 
-        // 1. Automatically update user document in Firestore 'users' collection
-        await updateDoc(doc(db, 'users', user.uid), {
+        // 2. Update Firestore user document: increment depositBalance
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, {
           depositBalance: increment(Number(amount)),
           updatedAt: new Date().toISOString()
         });
 
-        // 2. Save transaction record under 'depositRequests'
+        // 3. Mark transaction record in 'transactions' collection
+        await setDoc(doc(db, 'transactions', orderId), {
+          userId: user.uid,
+          amount: Number(amount),
+          orderId: orderId,
+          status: 'COMPLETED',
+          type: 'DEPOSIT',
+          gateway: 'RUPAYEX',
+          createdAt: new Date().toISOString()
+        });
+
+        // 4. Record in 'depositRequests' & 'walletHistory' for user UI transaction feed
         const txnRecord = {
           userId: user.uid,
           userFfUid: profile?.freeFireUid || pendingOrder?.userFfUid || '10000000',
           amount: Number(amount),
           orderId: orderId,
           status: 'COMPLETED',
+          type: 'DEPOSIT',
           gateway: 'RUPAYEX',
-          method: 'RUPAYEX',
           createdAt: new Date().toISOString()
         };
 
@@ -323,15 +352,16 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
           userEmail: user.email || '',
           userIgn: profile?.ign || 'Player',
           utrNumber: orderId,
-          reviewedAt: new Date().toISOString(),
+          reviewedAt: new Date().toISOString()
         });
 
-        // 3. Save transaction record under 'walletHistory'
         await addDoc(collection(db, 'walletHistory'), txnRecord);
 
-        // 4. Update UI states & celebrate
+        // 5. Update UI states, open wallet, and celebrate
         setActiveTab('wallet');
         setPaymentSuccessBanner({ amount, orderId });
+        setPaymentSuccessPopup({ amount, orderId });
+        localStorage.removeItem('pending_rupayex_order');
 
         try {
           confetti({
@@ -341,11 +371,10 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
           });
         } catch {}
 
-        // Clean query parameter from URL
+        // 6. Clean URL query parameters immediately using window.history.replaceState
         window.history.replaceState(null, '', '/wallet');
       } catch (err) {
         console.error('[Rupayex Auto-Credit Error]:', err);
-        // Clear flag if Firestore update failed so it can retry
         localStorage.removeItem(alreadyCreditedKey);
       }
     };
@@ -1716,6 +1745,47 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         onClose={() => setWalletModalOpen(false)}
         initialTab={walletInitialTab}
       />
+
+      {/* Rupayex Instant Auto-Credit Success Popup */}
+      {paymentSuccessPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
+          <div className="w-full max-w-sm rounded-3xl bg-[#0c0d18] border-2 border-emerald-500/70 p-6 shadow-2xl text-center relative animate-in fade-in zoom-in-95">
+            <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-4 shadow-lg shadow-emerald-500/20">
+              <CheckCircle2 className="w-9 h-9 stroke-[2.5]" />
+            </div>
+
+            <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-black uppercase tracking-wider">
+              Deposit Successful
+            </span>
+
+            <h3 className="text-xl font-black text-white font-heading mt-3">
+              Payment Auto-Credited!
+            </h3>
+
+            <div className="my-4 p-3.5 rounded-2xl bg-black/60 border border-emerald-500/30">
+              <span className="text-xs text-slate-400 font-mono block">Coins Added:</span>
+              <span className="text-3xl font-black font-mono text-emerald-400 tracking-wider">
+                +🪙 {paymentSuccessPopup.amount}
+              </span>
+            </div>
+
+            <p className="text-xs text-emerald-300 font-semibold leading-relaxed mb-4">
+              ₹{paymentSuccessPopup.amount} aapke wallet mein successfully credit ho gaye hain!
+            </p>
+
+            <span className="text-[10px] text-slate-500 font-mono block mb-5">
+              Order ID: {paymentSuccessPopup.orderId}
+            </span>
+
+            <button
+              onClick={() => setPaymentSuccessPopup(null)}
+              className="w-full h-11 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-heading font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/30 cursor-pointer active:scale-95"
+            >
+              Continue to Play
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Gamer Profile Modal */}
       <ProfileModal
