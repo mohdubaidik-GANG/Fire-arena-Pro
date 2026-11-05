@@ -1282,10 +1282,8 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
               <div className="relative z-10 flex items-center gap-4">
                 <div className="relative shrink-0">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-tr from-red-600 via-rose-500 to-amber-500 p-[3px] shadow-[0_0_20px_rgba(220,38,38,0.4)]">
-                    <div className="w-full h-full rounded-full bg-[#0a0b14] flex items-center justify-center text-white">
-                      <Gamepad2 className="w-9 h-9 text-red-500 stroke-[2.2]" />
-                    </div>
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-tr from-amber-500 via-orange-500 to-red-600 p-[3px] shadow-[0_0_24px_rgba(234,179,8,0.5)] overflow-hidden">
+                    <img src="/logo.png" alt="Fire Arena Pro" className="w-full h-full rounded-full object-cover" />
                   </div>
                   <span className="absolute bottom-0 right-0 px-2 py-0.2 rounded-full bg-emerald-500 text-black text-[9px] font-mono font-black border-2 border-[#090a14]">
                     VERIFIED

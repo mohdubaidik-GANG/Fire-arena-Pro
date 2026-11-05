@@ -27,10 +27,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenWallet, onOpenProfile, onL
           className="flex items-center gap-2.5 cursor-pointer hover:opacity-90 transition-opacity min-w-0"
         >
           <div className="relative shrink-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-red-600 via-rose-500 to-amber-500 p-[2px] shadow-[0_0_12px_rgba(220,38,38,0.4)]">
-              <div className="w-full h-full rounded-full bg-[#0a0a12] flex items-center justify-center text-white font-bold text-xs">
-                {username.charAt(0).toUpperCase()}
-              </div>
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-gradient-to-tr from-amber-500 via-orange-500 to-red-600 p-[2px] shadow-[0_0_14px_rgba(234,179,8,0.5)] overflow-hidden">
+              <img src="/logo.png" alt="Fire Arena Pro" className="w-full h-full rounded-full object-cover" />
             </div>
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-[#06070a]" />
           </div>

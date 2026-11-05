@@ -156,18 +156,18 @@ export const AuthGate: React.FC = () => {
 
           {/* Logo Brand Header */}
           <div className="flex flex-col items-center text-center mb-6">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20 mb-3 border border-amber-400/40">
-              <Flame className="w-8 h-8 text-black fill-black stroke-[2.5]" />
+            <div className="w-16 h-16 rounded-2xl p-1 bg-gradient-to-br from-amber-500/20 via-orange-500/20 to-red-500/20 flex items-center justify-center shadow-xl shadow-amber-500/30 mb-3 border border-amber-400/40 overflow-hidden">
+              <img src="/logo.png" alt="Fire Arena Pro" className="w-full h-full object-contain filter drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
             </div>
 
             <div className="flex items-center gap-2 mb-0.5">
               <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-semibold">
-                Esports Battle Arena
+                Official Esports Tournament Platform
               </span>
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white font-heading">
-              FIRE<span className="text-amber-400">ARENA</span> <span className="text-orange-500">MAX</span>
+              FIRE<span className="text-amber-400">ARENA</span> <span className="text-orange-500">PRO</span>
             </h1>
 
             <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">

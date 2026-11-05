@@ -52,11 +52,11 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
       <div className="w-full max-w-md bg-[#090a14] border border-red-950/80 rounded-2xl shadow-2xl relative overflow-hidden">
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-red-950/60 bg-[#0e0c18]">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-red-600/10 border border-red-600/30 flex items-center justify-center text-red-400">
-              <User className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-red-600 p-[2px] shadow-[0_0_12px_rgba(234,179,8,0.4)] overflow-hidden">
+              <img src="/logo.png" alt="Fire Arena Pro" className="w-full h-full rounded-lg object-cover" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white font-heading">EliteX24 Gamer Profile</h2>
+              <h2 className="text-base font-bold text-white font-heading">Fire Arena Pro Gamer Profile</h2>
               <p className="text-xs text-slate-400">Free Fire MAX Identity</p>
             </div>
           </div>
