@@ -19,7 +19,11 @@ import {
   Coins,
   ChevronLeft,
   Receipt,
-  Trophy
+  Trophy,
+  ShieldCheck,
+  Lock,
+  Zap,
+  CreditCard
 } from 'lucide-react';
 import { collection, query, where, addDoc, updateDoc, doc, onSnapshot } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
@@ -54,8 +58,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     rules: 'Deposit is credited within 5-15 mins of UTR verification. Withdrawals processed 24/7.',
   });
 
-  // Deposit Form State
-  const [depositAmount, setDepositAmount] = useState<number>(50);
+  // Deposit Form State (Rupayex merchant channel standard: min ₹100)
+  const [depositAmount, setDepositAmount] = useState<number>(100);
   const [customAmount, setCustomAmount] = useState<string>('');
   const [utrNumber, setUtrNumber] = useState<string>('');
   const [proofNote, setProofNote] = useState<string>('');
@@ -136,70 +140,103 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setTimeout(() => setCopiedUpi(false), 2000);
   };
 
-  // Handle Screenshot file upload
-  const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 2 * 1024 * 1024) {
-      alert('Screenshot image size should be under 2MB.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setScreenshotData(reader.result as string);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Submit Deposit Request
-  const handleDepositSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Rupayex Payment Gateway Order Creation & Immediate Redirect
+  const handleProceedToPayRupayex = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setDepositError(null);
     setDepositSuccessMsg(null);
 
     const amount = currentEffectiveDepositAmount;
-    if (amount < (adminSettings.minDeposit || 20)) {
-      setDepositError(`Minimum deposit amount is ₹${adminSettings.minDeposit || 20}`);
+    if (!amount || amount < 10) {
+      setDepositError('Please enter a valid deposit amount (e.g. ₹100, ₹150, ₹200, ₹300, ₹500).');
       return;
     }
 
-    const cleanUtr = utrNumber.trim();
-    if (cleanUtr.length < 6) {
-      setDepositError('Please enter a valid 12-digit UPI Reference / UTR Number from your payment app.');
+    if (!user) {
+      setDepositError('Please log in first to proceed with deposit.');
       return;
     }
 
-    if (!user || !profile) {
-      setDepositError('Please log in first.');
-      return;
-    }
+    const currentUser = {
+      uid: user.uid,
+      ffUid: profile?.freeFireUid || user.uid || '10000000',
+      ign: profile?.ign || (user as any).displayName || 'Player',
+      phone: profile?.phone || '9999999999',
+      email: user.email || '',
+    };
+
+    const order_id = `TXN_${Date.now()}_${currentUser.ffUid}`;
+    const redirect_url = window.location.origin + '/wallet?payment=success';
+
+    const orderPayload = {
+      user_token: "2cbda25b49468fe8b5b65d535531fe0d",
+      instance_id: "I9dwytvqic1793850117",
+      amount: Number(amount),
+      order_id: order_id,
+      customer_name: currentUser.ign || "Player",
+      customer_mobile: currentUser.phone || "9999999999",
+      redirect_url: redirect_url,
+    };
+
+    // Save pending transaction to localStorage for auto-crediting on redirect return
+    localStorage.setItem('pending_rupayex_order', JSON.stringify({
+      orderId: order_id,
+      amount: Number(amount),
+      userId: currentUser.uid,
+      userFfUid: currentUser.ffUid,
+      createdAt: new Date().toISOString()
+    }));
 
     setDepositSubmitting(true);
     try {
-      const newDeposit: Omit<DepositRequest, 'id'> = {
-        userId: user.uid,
-        userEmail: user.email || '',
-        userIgn: profile.ign,
-        amount,
-        utrNumber: cleanUtr,
-        proofUrl: screenshotData || proofNote || 'UPI direct receipt',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
+      let data: any = null;
 
-      await addDoc(collection(db, 'depositRequests'), newDeposit);
-      setDepositSuccessMsg(`Deposit request for ₹${amount} submitted! Status: Pending Admin Verification.`);
-      setUtrNumber('');
-      setScreenshotData('');
-      setProofNote('');
-      setCustomAmount('');
+      // 1. Try server proxy endpoint first (guarantees zero CORS blocking)
+      try {
+        const proxyRes = await fetch('/api/rupayex/create-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(orderPayload)
+        });
+        if (proxyRes.ok) {
+          data = await proxyRes.json();
+        }
+      } catch (proxyErr) {
+        console.warn('Proxy route attempted, falling back to direct endpoint:', proxyErr);
+      }
+
+      // 2. Direct endpoint fallback if needed
+      if (!data || (!data.payment_url && !data.data?.payment_url)) {
+        const directRes = await fetch('https://rupayex.net/api/create-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(orderPayload)
+        });
+        data = await directRes.json();
+      }
+
+      console.log('Rupayex create-order response:', data);
+
+      const paymentUrl = data?.payment_url || data?.data?.payment_url || data?.url || data?.data?.url || data?.checkout_url;
+
+      if (paymentUrl) {
+        setDepositSuccessMsg('Connecting to Rupayex Gateway...');
+        // Immediately redirect the user to checkout URL
+        window.location.href = paymentUrl;
+      } else {
+        const rawMsg = data?.message || 'Payment gateway failed to provide checkout URL.';
+        if (typeof rawMsg === 'string' && rawMsg.toLowerCase().includes('not suitable this channel')) {
+          throw new Error('This merchant channel requires an amount of ₹100 or higher (e.g. ₹100, ₹150, ₹200, ₹300, ₹500, ₹1000). Please select one of the preset amounts.');
+        }
+        throw new Error(rawMsg);
+      }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to submit deposit request';
+      console.error('Rupayex payment checkout failed:', err);
+      const msg = err instanceof Error ? err.message : 'Unable to connect to Rupayex payment gateway.';
       setDepositError(msg);
-      handleFirestoreError(err, OperationType.CREATE, 'depositRequests');
-    } finally {
       setDepositSubmitting(false);
     }
   };
@@ -377,20 +414,26 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <span>Back to Wallet & Stats Overview</span>
               </button>
 
-              {/* Instructions Banner */}
-              <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300 flex items-start gap-2.5">
-                <Sparkles className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <span>
-                  <strong>Step 1:</strong> Scan the Admin UPI QR Code using Google Pay, PhonePe, Paytm or any UPI app.
-                  <br />
-                  <strong>Step 2:</strong> Enter the 12-digit UPI Reference / UTR Number from your payment slip below to credit your account.
-                </span>
+              {/* Rupayex Security & Trust Banner */}
+              <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-start gap-2.5">
+                <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <strong className="text-white">Rupayex Instant Gateway</strong>
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold">
+                      VERIFIED
+                    </span>
+                  </div>
+                  <span className="text-slate-300">
+                    Supports Google Pay, PhonePe, Paytm, BHIM, UPI QR & NetBanking. Your coins are credited <strong>instantly</strong> upon payment.
+                  </span>
+                </div>
               </div>
 
               {depositSuccessMsg && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-center gap-2 animate-pulse">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>{depositSuccessMsg}</span>
+                  <span className="font-semibold">{depositSuccessMsg}</span>
                 </div>
               )}
 
@@ -406,8 +449,8 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
                   Select Deposit Amount
                 </label>
-                <div className="grid grid-cols-4 gap-2 mb-2">
-                  {[20, 50, 100, 200].map((amt) => (
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-2.5">
+                  {[100, 150, 200, 300, 500, 1000].map((amt) => (
                     <button
                       key={amt}
                       type="button"
@@ -415,10 +458,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                         setDepositAmount(amt);
                         setCustomAmount('');
                       }}
-                      className={`h-11 rounded-xl font-mono font-bold text-xs transition-all cursor-pointer ${
+                      className={`h-11 rounded-xl font-mono font-black text-xs transition-all cursor-pointer border ${
                         depositAmount === amt && !customAmount
-                          ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
-                          : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                          ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white border-red-500 shadow-lg shadow-red-950/60 scale-102'
+                          : 'bg-[#06070a] border-red-950/70 text-slate-300 hover:border-red-900/80 hover:text-white'
                       }`}
                     >
                       ₹{amt}
@@ -428,117 +471,72 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm">₹</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-400 font-mono font-bold text-sm">₹</span>
                     <input
                       type="number"
-                      placeholder="Or enter custom amount (e.g. 150)"
+                      placeholder="Or enter custom amount (e.g. 100, 150, 250, 500)"
                       value={customAmount}
                       onChange={(e) => setCustomAmount(e.target.value)}
-                      className="w-full h-11 pl-7 pr-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
+                      min={100}
+                      className="w-full h-11 pl-8 pr-3 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-red-500"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Dynamic QR Code & Direct UPI Card */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#141424] to-[#0c0c16] border border-amber-500/30 flex flex-col items-center text-center space-y-4">
-                <div className="flex items-center gap-2 text-xs font-mono text-amber-400">
-                  <QrCode className="w-4 h-4" />
-                  <span>SCAN UPI QR TO PAY ₹{currentEffectiveDepositAmount}</span>
+              {/* Rupayex Checkout Summary Card */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#110f22] to-[#090a14] border border-red-950/80 space-y-4 shadow-xl">
+                <div className="flex items-center justify-between pb-3 border-b border-red-950/60">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-heading font-black text-white uppercase tracking-wider">
+                      Checkout Summary
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-emerald-400 font-bold flex items-center gap-1">
+                    <Zap className="w-3 h-3 fill-emerald-400" /> Auto-Credit Active
+                  </span>
                 </div>
 
-                <div className="p-3 bg-white rounded-2xl shadow-xl shadow-amber-500/10">
-                  <QrCodeCanvas value={currentUpiUri} size={180} />
-                </div>
-
-                {/* Direct UPI ID with Copy Button */}
-                <div className="w-full max-w-sm space-y-1.5">
-                  <span className="text-[11px] text-slate-400 font-mono">Official Admin UPI ID:</span>
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/60 border border-red-950/80">
-                    <code className="text-xs font-mono font-bold text-white tracking-wide truncate">
-                      {cleanPayeeVpa}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={handleCopyUpi}
-                      className="ml-2 px-2.5 py-1 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/30 text-xs font-mono font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                    >
-                      {copiedUpi ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedUpi ? 'Copied' : 'Copy'}</span>
-                    </button>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Deposit Amount:</span>
+                    <span className="font-mono font-bold text-white">₹{currentEffectiveDepositAmount}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Coins Credited:</span>
+                    <span className="font-mono font-black text-amber-400">🪙 {currentEffectiveDepositAmount}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Gateway Fees:</span>
+                    <span className="font-mono font-bold text-emerald-400">₹0 (100% FREE)</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-400">
+                    <span>Merchant Gateway:</span>
+                    <span className="font-mono text-slate-200">Rupayex Instant UPI</span>
                   </div>
                 </div>
 
-                {/* Auto-generated UPI Intent Button */}
-                <a
-                  href={currentUpiUri}
-                  onClick={(e) => {
-                    // Direct intent invocation for mobile APK / WebView browsers
-                    try {
-                      window.location.href = currentUpiUri;
-                    } catch (err) {
-                      console.warn('UPI direct intent note:', err);
-                    }
-                  }}
-                  className="w-full max-w-sm h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 cursor-pointer active:scale-[0.98] transition-all"
-                >
-                  <Smartphone className="w-4 h-4 text-white" />
-                  <span>Pay ₹{currentEffectiveDepositAmount} via UPI App</span>
-                  <ExternalLink className="w-3.5 h-3.5 text-white/80" />
-                </a>
-              </div>
-
-              {/* Step 2 Form: Enter UTR Number */}
-              <form onSubmit={handleDepositSubmit} className="space-y-4 pt-2 border-t border-slate-800">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    12-Digit UPI Reference / UTR Number <span className="text-amber-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={utrNumber}
-                    onChange={(e) => setUtrNumber(e.target.value.replace(/\s+/g, ''))}
-                    placeholder="e.g. 402391823901 (from your payment slip)"
-                    maxLength={16}
-                    className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-amber-500"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Every UPI transaction gives a 12-digit UTR/Ref No. Admin matches this to credit your deposit wallet.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Payment Screenshot (Optional but recommended)
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleScreenshotChange}
-                    className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-800 file:text-amber-400 hover:file:bg-slate-700 cursor-pointer"
-                  />
-                  {screenshotData && (
-                    <div className="mt-2 text-xs text-emerald-400 flex items-center gap-1.5 font-mono">
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Receipt screenshot attached</span>
-                    </div>
-                  )}
-                </div>
-
+                {/* Main Action Button: Proceed to Pay */}
                 <button
-                  type="submit"
-                  disabled={depositSubmitting || currentEffectiveDepositAmount <= 0 || !utrNumber}
-                  className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+                  type="button"
+                  onClick={handleProceedToPayRupayex}
+                  disabled={depositSubmitting || currentEffectiveDepositAmount < 10}
+                  className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-red-950/80 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 border border-red-500/40"
                 >
-                  <ArrowDownCircle className="w-4 h-4 stroke-[2.5]" />
+                  <Lock className="w-4 h-4 text-white" />
                   <span>
                     {depositSubmitting
-                      ? 'Submitting Proof...'
-                      : `Submit Deposit Request for ₹${currentEffectiveDepositAmount}`}
+                      ? 'Connecting Gateway...'
+                      : `Proceed to Pay ₹${currentEffectiveDepositAmount}`}
                   </span>
+                  <ExternalLink className="w-3.5 h-3.5 text-white/80" />
                 </button>
-              </form>
+
+                <p className="text-[11px] text-center text-slate-500">
+                  You will be securely redirected to Rupayex payment gateway. Complete payment using any UPI app and your wallet will be updated automatically.
+                </p>
+              </div>
             </div>
           )}
 

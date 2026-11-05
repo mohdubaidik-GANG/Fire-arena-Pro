@@ -35,10 +35,11 @@ import {
   Copy,
   ArrowRight,
   Crown,
-  ChevronLeft,
-  Receipt
+  Receipt,
+  XCircle
 } from 'lucide-react';
-import { collection, query, onSnapshot, getDocs, setDoc, doc, addDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, getDocs, setDoc, doc, addDoc, updateDoc, increment } from 'firebase/firestore';
+import confetti from 'canvas-confetti';
 import { db } from './firebase';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthGate } from './components/AuthGate';
@@ -167,7 +168,22 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const { user, profile } = useAuth();
 
   // 5-Tab System: 'earn' | 'ranking' | 'play' | 'wallet' | 'account'
-  const [activeTab, setActiveTab] = useState<'earn' | 'ranking' | 'play' | 'wallet' | 'account'>('play');
+  const [activeTab, setActiveTab] = useState<'earn' | 'ranking' | 'play' | 'wallet' | 'account'>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      const search = window.location.search;
+      if (path === '/wallet' || path.startsWith('/wallet/') || search.includes('payment=success')) {
+        return 'wallet';
+      }
+    }
+    return 'play';
+  });
+
+  // Rupayex Payment Success Banner State
+  const [paymentSuccessBanner, setPaymentSuccessBanner] = useState<{
+    amount: number;
+    orderId: string;
+  } | null>(null);
 
   // Category and Mode Type Switcher on Play Screen
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -240,6 +256,101 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     }, 5000);
     return () => clearInterval(timer);
   }, []);
+
+  // Auto-Credit Rupayex Payment Gateway Return (/wallet?payment=success)
+  useEffect(() => {
+    if (!user) return;
+
+    const handleRupayexReturn = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isSuccess = urlParams.get('payment') === 'success' || urlParams.get('status') === 'success';
+
+      if (!isSuccess) return;
+
+      const pendingOrderRaw = localStorage.getItem('pending_rupayex_order');
+      let pendingOrder: any = null;
+      try {
+        pendingOrder = pendingOrderRaw ? JSON.parse(pendingOrderRaw) : null;
+      } catch {}
+
+      const urlOrderId = urlParams.get('order_id') || urlParams.get('orderId');
+      const urlAmount = urlParams.get('amount');
+
+      const orderId = urlOrderId || pendingOrder?.orderId || `TXN_${Date.now()}_${profile?.freeFireUid || user.uid}`;
+      const amount = Number(urlAmount || pendingOrder?.amount || 0);
+
+      const alreadyCreditedKey = `rupayex_credited_${orderId}`;
+      if (localStorage.getItem(alreadyCreditedKey)) {
+        if (amount > 0 && !paymentSuccessBanner) {
+          setPaymentSuccessBanner({ amount, orderId });
+          setActiveTab('wallet');
+        }
+        return;
+      }
+
+      if (amount <= 0) {
+        console.warn('[Rupayex] Arrived with payment=success but no valid amount found.');
+        return;
+      }
+
+      // Mark credited immediately in localStorage to prevent duplicate runs
+      localStorage.setItem(alreadyCreditedKey, 'true');
+      localStorage.removeItem('pending_rupayex_order');
+
+      try {
+        console.log(`[Rupayex Auto-Credit] Crediting ₹${amount} to user ${user.uid} for order ${orderId}`);
+
+        // 1. Automatically update user document in Firestore 'users' collection
+        await updateDoc(doc(db, 'users', user.uid), {
+          depositBalance: increment(Number(amount)),
+          updatedAt: new Date().toISOString()
+        });
+
+        // 2. Save transaction record under 'depositRequests'
+        const txnRecord = {
+          userId: user.uid,
+          userFfUid: profile?.freeFireUid || pendingOrder?.userFfUid || '10000000',
+          amount: Number(amount),
+          orderId: orderId,
+          status: 'COMPLETED',
+          gateway: 'RUPAYEX',
+          createdAt: new Date().toISOString()
+        };
+
+        await addDoc(collection(db, 'depositRequests'), {
+          ...txnRecord,
+          userEmail: user.email || '',
+          userIgn: profile?.ign || 'Player',
+          utrNumber: orderId,
+          reviewedAt: new Date().toISOString(),
+        });
+
+        // 3. Save transaction record under 'walletHistory'
+        await addDoc(collection(db, 'walletHistory'), txnRecord);
+
+        // 4. Update UI states & celebrate
+        setActiveTab('wallet');
+        setPaymentSuccessBanner({ amount, orderId });
+
+        try {
+          confetti({
+            particleCount: 120,
+            spread: 80,
+            origin: { y: 0.6 }
+          });
+        } catch {}
+
+        // Clean query parameter from URL
+        window.history.replaceState(null, '', '/wallet');
+      } catch (err) {
+        console.error('[Rupayex Auto-Credit Error]:', err);
+        // Clear flag if Firestore update failed so it can retry
+        localStorage.removeItem(alreadyCreditedKey);
+      }
+    };
+
+    handleRupayexReturn();
+  }, [user, profile]);
 
   // Realtime Tournaments & Matches Listener
   useEffect(() => {
@@ -1121,6 +1232,37 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
            ========================================================================= */}
         {activeTab === 'wallet' && (
           <div className="space-y-6 animate-in fade-in duration-200">
+            {paymentSuccessBanner && (
+              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-[#0d281e] to-emerald-900/70 border-2 border-emerald-500 shadow-2xl shadow-emerald-950/80 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-3">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                    <CheckCircle2 className="w-7 h-7 stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black font-heading text-white uppercase tracking-wider flex items-center gap-2">
+                      <span>Payment Successful!</span>
+                      <span className="px-2 py-0.2 rounded-full bg-emerald-500 text-black text-[9px] font-mono font-black">
+                        AUTO-CREDITED
+                      </span>
+                    </h3>
+                    <p className="text-xs text-emerald-300 font-medium mt-0.5">
+                      🪙 <strong className="text-white font-bold">{paymentSuccessBanner.amount} Coins</strong> have been credited to your wallet.
+                      <span className="text-[10px] text-slate-400 font-mono block sm:inline sm:ml-2">
+                        Order ID: {paymentSuccessBanner.orderId}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPaymentSuccessBanner(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-emerald-900/40 transition-colors cursor-pointer"
+                  title="Dismiss Banner"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
             <WalletAndCareerStats
               onOpenDeposit={() => handleOpenWallet('deposit')}
               onOpenWithdraw={() => handleOpenWallet('withdraw')}

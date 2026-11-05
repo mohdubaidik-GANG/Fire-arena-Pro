@@ -100,6 +100,50 @@ app.post('/api/send-redeem-code', async (req, res) => {
   }
 });
 
+// Rupayex Payment Gateway API Endpoint (Server Proxy for zero-CORS reliability)
+app.post('/api/rupayex/create-order', async (req, res) => {
+  try {
+    const { amount, order_id, customer_name, customer_mobile, redirect_url } = req.body;
+
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ status: false, message: 'Invalid deposit amount' });
+    }
+
+    const payload = {
+      user_token: "2cbda25b49468fe8b5b65d535531fe0d",
+      instance_id: "I9dwytvqic1793850117",
+      amount: Number(amount),
+      order_id: String(order_id || `TXN_${Date.now()}`),
+      customer_name: customer_name || "Player",
+      customer_mobile: customer_mobile || "9999999999",
+      redirect_url: redirect_url || "https://example.com/wallet?payment=success"
+    };
+
+    console.log('[Rupayex Gateway Proxy] Creating order:', payload.order_id, 'Amount: ₹' + payload.amount);
+
+    const gatewayResponse = await fetch('https://rupayex.net/api/create-order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data: any = await gatewayResponse.json().catch(() => null);
+    console.log('[Rupayex Gateway Proxy] Response:', data);
+
+    if (!data) {
+      return res.status(502).json({ status: false, message: 'Invalid response from Rupayex Gateway' });
+    }
+
+    return res.status(gatewayResponse.status).json(data);
+  } catch (error: any) {
+    console.error('[Rupayex Gateway Proxy Error]:', error);
+    return res.status(500).json({ status: false, error: error.message || 'Payment Gateway proxy failure' });
+  }
+});
+
 async function startServer() {
   const publicPath = path.resolve(process.cwd(), 'public');
   

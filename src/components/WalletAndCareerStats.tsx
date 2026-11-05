@@ -258,21 +258,23 @@ export const WalletAndCareerStats: React.FC<WalletAndCareerStatsProps> = ({
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-white">Deposit via UPI</span>
+                        <span className="font-bold text-white">
+                          {dep.gateway === 'RUPAYEX' ? 'Rupayex Instant Gateway' : 'Deposit via UPI'}
+                        </span>
                         <span
                           className={`px-2 py-0.2 rounded text-[10px] font-mono font-bold uppercase ${
-                            dep.status === 'approved'
+                            dep.status === 'approved' || dep.status === 'COMPLETED'
                               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                               : dep.status === 'rejected'
                               ? 'bg-red-500/10 text-red-400 border border-red-500/30'
                               : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
                           }`}
                         >
-                          {dep.status}
+                          {dep.status === 'approved' || dep.status === 'COMPLETED' ? 'COMPLETED' : dep.status}
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
-                        UTR: {dep.utrNumber} · {new Date(dep.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        Txn: {dep.orderId || dep.utrNumber || 'N/A'} · {new Date(dep.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
                       </span>
                     </div>
                   </div>

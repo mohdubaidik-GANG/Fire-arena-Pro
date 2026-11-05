@@ -96,9 +96,11 @@ export interface DepositRequest {
   userEmail: string;
   userIgn: string;
   amount: number;
-  utrNumber: string; // 12-digit UPI reference number
+  utrNumber?: string; // 12-digit UPI reference number
+  orderId?: string;
+  gateway?: string;
   proofUrl?: string; // payment screenshot or receipt note
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'COMPLETED';
   adminNote?: string;
   createdAt: string;
   reviewedAt?: string;

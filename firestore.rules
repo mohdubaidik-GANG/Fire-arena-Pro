@@ -59,6 +59,12 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Wallet History (Rupayex & Payout records)
+    match /walletHistory/{historyId} {
+      allow get, list, create: if true;
+      allow update, delete: if isAdmin();
+    }
+
     // Withdrawal Requests
     match /withdrawalRequests/{withdrawalId} {
       allow get, list, create: if true;
