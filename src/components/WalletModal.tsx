@@ -53,14 +53,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     upiName: 'FireArena MAX Esports',
     qrCodeUrl: '',
     supportWhatsapp: '919876543210',
-    minDeposit: 20,
+    minDeposit: 1,
     minWithdrawal: 50,
     rules: 'Deposit is credited within 5-15 mins of UTR verification. Withdrawals processed 24/7.',
   });
 
-  // Deposit Form State (Rupayex merchant channel standard: min ₹100)
+  // Deposit Form State (Flexible ₹1 to ₹10,000)
   const [depositAmount, setDepositAmount] = useState<number>(100);
-  const [customAmount, setCustomAmount] = useState<string>('');
+  const [customAmount, setCustomAmount] = useState<string>('100');
   const [utrNumber, setUtrNumber] = useState<string>('');
   const [proofNote, setProofNote] = useState<string>('');
   const [screenshotData, setScreenshotData] = useState<string>('');
@@ -146,9 +146,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setDepositError(null);
     setDepositSuccessMsg(null);
 
-    const amount = currentEffectiveDepositAmount;
-    if (!amount || amount < 10) {
-      setDepositError('Please enter a valid deposit amount (e.g. ₹100, ₹150, ₹200, ₹300, ₹500).');
+    const amount = Number(currentEffectiveDepositAmount);
+    if (!amount || isNaN(amount) || amount < 1 || amount > 10000) {
+      const errorMsg = "Amount ₹1 se ₹10,000 ke beech hona chahiye!";
+      setDepositError(errorMsg);
+      try {
+        if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+          window.alert(errorMsg);
+        }
+      } catch {
+        // If iframe suppresses alert, UI banner displays errorMsg
+      }
       return;
     }
 
@@ -172,10 +180,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       user_token: "2cbda25b49468fe8b5b65d535531fe0d",
       instance_id: "I9dwytvqic1793850117",
       amount: Number(amount),
-      order_id: order_id,
+      order_id: `TXN_${Date.now()}_${currentUser.ffUid}`,
       customer_name: currentUser.ign || "Player",
       customer_mobile: currentUser.phone || "9999999999",
-      redirect_url: redirect_url,
+      redirect_url: window.location.origin + "/wallet?payment=success",
     };
 
     // Save pending transaction to localStorage for auto-crediting on redirect return
@@ -444,42 +452,63 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </div>
               )}
 
-              {/* Amount Selection Presets */}
+              {/* Amount Input & Quick Select Chips */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                  Select Deposit Amount
+                  Deposit Amount (₹1 - ₹10,000)
                 </label>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-2.5">
-                  {[100, 150, 200, 300, 500, 1000].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => {
-                        setDepositAmount(amt);
-                        setCustomAmount('');
-                      }}
-                      className={`h-11 rounded-xl font-mono font-black text-xs transition-all cursor-pointer border ${
-                        depositAmount === amt && !customAmount
-                          ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white border-red-500 shadow-lg shadow-red-950/60 scale-102'
-                          : 'bg-[#06070a] border-red-950/70 text-slate-300 hover:border-red-900/80 hover:text-white'
-                      }`}
-                    >
-                      ₹{amt}
-                    </button>
-                  ))}
+                <div className="relative mb-3">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-400 font-mono font-bold text-base">₹</span>
+                  <input
+                    type="number"
+                    placeholder="Enter custom amount (₹1 - ₹10,000)"
+                    value={customAmount}
+                    onChange={(e) => {
+                      setCustomAmount(e.target.value);
+                      setDepositError(null);
+                    }}
+                    min={1}
+                    max={10000}
+                    className="w-full h-12 pl-8 pr-4 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-red-500 shadow-inner"
+                  />
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-400 font-mono font-bold text-sm">₹</span>
-                    <input
-                      type="number"
-                      placeholder="Or enter custom amount (e.g. 100, 150, 250, 500)"
-                      value={customAmount}
-                      onChange={(e) => setCustomAmount(e.target.value)}
-                      min={100}
-                      className="w-full h-11 pl-8 pr-3 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-red-500"
-                    />
+                {/* Quick Select Chips directly under the input box */}
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                    <span>Quick Select Amount</span>
+                    <span className="text-[10px] text-slate-500 font-mono">Min ₹1 • Max ₹10,000</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { label: '+₹10', value: 10 },
+                      { label: '+₹50', value: 50 },
+                      { label: '+₹100', value: 100 },
+                      { label: '+₹500', value: 500 },
+                      { label: '+₹1,000', value: 1000 },
+                      { label: '+₹5,000', value: 5000 },
+                      { label: '+₹10,000', value: 10000 },
+                    ].map((chip) => {
+                      const isSelected = currentEffectiveDepositAmount === chip.value;
+                      return (
+                        <button
+                          key={chip.value}
+                          type="button"
+                          onClick={() => {
+                            setCustomAmount(chip.value.toString());
+                            setDepositAmount(chip.value);
+                            setDepositError(null);
+                          }}
+                          className={`px-3.5 py-2 rounded-xl font-mono font-bold text-xs transition-all cursor-pointer border flex items-center justify-center ${
+                            isSelected
+                              ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white border-red-500 shadow-md shadow-red-950/60 scale-102'
+                              : 'bg-[#06070a] border-red-950/70 text-slate-300 hover:border-red-800 hover:text-white'
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -521,14 +550,16 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <button
                   type="button"
                   onClick={handleProceedToPayRupayex}
-                  disabled={depositSubmitting || currentEffectiveDepositAmount < 10}
+                  disabled={depositSubmitting || currentEffectiveDepositAmount < 1 || currentEffectiveDepositAmount > 10000}
                   className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-red-950/80 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 border border-red-500/40"
                 >
                   <Lock className="w-4 h-4 text-white" />
                   <span>
                     {depositSubmitting
                       ? 'Connecting Gateway...'
-                      : `Proceed to Pay ₹${currentEffectiveDepositAmount}`}
+                      : currentEffectiveDepositAmount >= 1 && currentEffectiveDepositAmount <= 10000
+                      ? `Proceed to Pay ₹${currentEffectiveDepositAmount}`
+                      : 'Enter Amount (₹1 - ₹10,000)'}
                   </span>
                   <ExternalLink className="w-3.5 h-3.5 text-white/80" />
                 </button>
