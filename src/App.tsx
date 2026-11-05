@@ -58,6 +58,7 @@ const WalletModal = React.lazy(() => import('./components/WalletModal').then(m =
 const ProfileModal = React.lazy(() => import('./components/ProfileModal').then(m => ({ default: m.ProfileModal })));
 const MatchRulesModal = React.lazy(() => import('./components/MatchRulesModal').then(m => ({ default: m.MatchRulesModal })));
 const ProofSubmissionModal = React.lazy(() => import('./components/ProofSubmissionModal').then(m => ({ default: m.ProofSubmissionModal })));
+const NotificationCenterModal = React.lazy(() => import('./components/NotificationCenterModal').then(m => ({ default: m.NotificationCenterModal })));
 
 // Root App Component
 export default function App() {
@@ -203,6 +204,9 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [walletInitialTab, setWalletInitialTab] = useState<'overview' | 'deposit' | 'withdraw' | 'history'>('overview');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [dismissedRoomAlerts, setDismissedRoomAlerts] = useState<Set<string>>(new Set());
   const [selectedTournamentToJoin, setSelectedTournamentToJoin] = useState<Tournament | null>(null);
   const [selectedTournamentForRules, setSelectedTournamentForRules] = useState<Tournament | null>(null);
   const [selectedTournamentForProof, setSelectedTournamentForProof] = useState<Tournament | null>(null);
@@ -241,6 +245,50 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [rankingCategory, setRankingCategory] = useState('ALL');
   const [leaderboardType, setLeaderboardType] = useState<'winnings' | 'kills'>('winnings');
 
+  // Real-time unread notifications counter
+  useEffect(() => {
+    let broadcastIds: string[] = [];
+    let userIds: string[] = [];
+
+    const updateUnread = () => {
+      try {
+        const saved = localStorage.getItem('firearena_read_notifications');
+        const readSet = saved ? new Set(JSON.parse(saved)) : new Set();
+        const allIds = [...broadcastIds, ...userIds];
+        const unread = allIds.filter((id) => !readSet.has(id)).length;
+        setUnreadNotifCount(unread);
+      } catch {
+        setUnreadNotifCount(0);
+      }
+    };
+
+    const unsubBcast = onSnapshot(
+      collection(db, 'broadcast_notifications'),
+      (snap) => {
+        broadcastIds = snap.docs.map((d) => d.id);
+        updateUnread();
+      },
+      () => {}
+    );
+
+    let unsubUser = () => {};
+    if (user?.uid) {
+      unsubUser = onSnapshot(
+        collection(db, 'users', user.uid, 'notifications'),
+        (snap) => {
+          userIds = snap.docs.map((d) => d.id);
+          updateUnread();
+        },
+        () => {}
+      );
+    }
+
+    return () => {
+      unsubBcast();
+      unsubUser();
+    };
+  }, [user?.uid]);
+
   // Promo Banners Definition
   const PROMO_BANNERS = [
     {
@@ -256,12 +304,12 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     {
       id: 1,
       tag: 'DAILY FREE ROOMS',
-      title: 'FOLLOW OUR WHATSAPP CHANNEL FOR FREE MATCHES',
-      subtitle: 'Daily custom giveaway schedules, tips, and instant room IDs',
+      title: 'JOIN OFFICIAL WHATSAPP GROUP / SUPPORT',
+      subtitle: 'Daily custom giveaway schedules, instant room IDs & direct help',
       icon: MessageCircle,
       badgeColor: 'bg-emerald-600',
-      action: () => window.open('https://whatsapp.com/channel/0029VaFireArenaPro', '_blank'),
-      btnLabel: 'Join Channel'
+      action: () => window.open('https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC', '_blank'),
+      btnLabel: 'Join Official WhatsApp Group / Support'
     },
     {
       id: 2,
@@ -270,8 +318,8 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       subtitle: 'Official WhatsApp operations desk online for coin & match help',
       icon: Headphones,
       badgeColor: 'bg-indigo-600',
-      action: () => window.open('https://wa.me/919876543210', '_blank'),
-      btnLabel: 'WhatsApp Help'
+      action: () => window.open('https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC', '_blank'),
+      btnLabel: 'Join Official WhatsApp Group / Support'
     }
   ];
 
@@ -752,6 +800,22 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const completedCount = tournaments.filter((t) => Boolean(myRegistrations[t.id]) && t.status?.toLowerCase() === 'completed').length;
   const totalMyRegistered = Object.keys(myRegistrations).length;
 
+  // Active joined tournament with released Room ID & Password
+  const activeRoomMatch = tournaments.find(
+    (t) =>
+      Boolean(myRegistrations[t.id]) &&
+      Boolean(t.roomId && t.roomPassword) &&
+      t.status?.toLowerCase() !== 'completed' &&
+      t.status?.toLowerCase() !== 'cancelled'
+  );
+
+  const handleCopyCredential = (val: string, label: string) => {
+    sound.playCopy();
+    navigator.clipboard.writeText(val);
+    setCopyToast(`${label} Copied: ${val}`);
+    setTimeout(() => setCopyToast(null), 2500);
+  };
+
   return (
     <div className="min-h-screen bg-[#06070a] text-slate-100 flex flex-col font-sans selection:bg-red-600 selection:text-white">
       {/* Toast Notification */}
@@ -766,8 +830,90 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       <Header
         onOpenWallet={handleOpenWallet}
         onOpenProfile={() => setActiveTab('account')}
+        onOpenNotifications={() => setNotificationCenterOpen(true)}
+        unreadNotificationsCount={unreadNotifCount}
         onLogout={onLogout}
       />
+
+      {/* Floating Auto Room ID & Password Delivery Card for Joined Players */}
+      {activeRoomMatch && !dismissedRoomAlerts.has(activeRoomMatch.id) && (
+        <div className="fixed bottom-20 sm:bottom-6 right-3 sm:right-6 z-40 max-w-md w-[calc(100%-24px)] bg-[#0d0e19]/95 backdrop-blur-md border-2 border-amber-500 rounded-2xl p-4 shadow-[0_0_35px_rgba(245,158,11,0.35)] animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-start justify-between gap-2 mb-2 pb-2 border-b border-amber-500/20">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+              <div>
+                <span className="text-xs font-black font-heading uppercase text-amber-400 tracking-wider block">
+                  🚨 ROOM ID & PASS RELEASED!
+                </span>
+                <span className="text-[11px] font-bold text-white truncate block max-w-[220px]">
+                  {activeRoomMatch.title}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                sound.playClick();
+                setDismissedRoomAlerts((prev) => new Set(prev).add(activeRoomMatch.id));
+              }}
+              className="w-6 h-6 rounded-md bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-xs cursor-pointer"
+              title="Dismiss Alert"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 mb-2.5">
+            {/* Room ID with 1-tap copy */}
+            <div className="bg-black/60 p-2.5 rounded-xl border border-slate-700/80">
+              <span className="block text-[9px] font-bold text-slate-400 uppercase">Room ID</span>
+              <div className="flex items-center justify-between mt-0.5">
+                <span className="font-mono font-black text-xs text-amber-300 tracking-wider">
+                  {activeRoomMatch.roomId}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyCredential(activeRoomMatch.roomId!, 'Room ID')}
+                  className="p-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 cursor-pointer transition-colors"
+                  title="Copy Room ID"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Password with 1-tap copy */}
+            <div className="bg-black/60 p-2.5 rounded-xl border border-slate-700/80">
+              <span className="block text-[9px] font-bold text-slate-400 uppercase">Password</span>
+              <div className="flex items-center justify-between mt-0.5">
+                <span className="font-mono font-black text-xs text-red-300 tracking-wider">
+                  {activeRoomMatch.roomPassword}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleCopyCredential(activeRoomMatch.roomPassword!, 'Password')}
+                  className="p-1 rounded bg-red-500/20 hover:bg-red-500/30 text-red-300 cursor-pointer transition-colors"
+                  title="Copy Password"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-[10px] text-slate-400">
+            <span>Open Free Fire MAX custom room</span>
+            <button
+              onClick={() => {
+                sound.playClick();
+                setSelectedTournamentForRules(activeRoomMatch);
+              }}
+              className="font-bold text-red-400 hover:underline cursor-pointer"
+            >
+              Match Details →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="max-w-6xl mx-auto w-full px-3 sm:px-6 py-4 pb-28 sm:pb-16 flex-1 space-y-5">
@@ -1306,14 +1452,14 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               <p className="text-xs text-slate-400">Earn coins by inviting friends & following our community</p>
             </div>
 
-            {/* WhatsApp Channel Follow Banner */}
+            {/* WhatsApp Group & Support Banner */}
             <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-600/20 via-slate-900 to-teal-600/20 border border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl">
               <div className="space-y-1 text-center sm:text-left">
                 <span className="px-2 py-0.5 rounded bg-emerald-500 text-black text-[9px] font-mono font-black uppercase tracking-wider">
                   Official Community
                 </span>
                 <h3 className="text-base font-bold text-white font-heading">
-                  Follow Our WhatsApp Channel
+                  Join Official WhatsApp Group / Support
                 </h3>
                 <p className="text-xs text-slate-300 max-w-sm">
                   Get daily free custom room passwords, giveaway schedules, and platform notices.
@@ -1321,13 +1467,13 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               </div>
 
               <a
-                href="https://whatsapp.com/channel/0029VaFireArenaPro"
+                href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
                 target="_blank"
                 rel="noreferrer"
                 className="h-10 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-heading font-black text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shrink-0 shadow-md shadow-emerald-500/20"
               >
                 <MessageCircle className="w-4 h-4 fill-black" />
-                <span>Follow Channel</span>
+                <span>Join Official WhatsApp Group / Support</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
@@ -1347,13 +1493,13 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               </div>
 
               <a
-                href="https://wa.me/919876543210?text=Hi%20Fire%20Arena%20Pro%20Support,%20I%20need%20help%20with%20my%20wallet"
+                href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
                 target="_blank"
                 rel="noreferrer"
                 className="h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer shrink-0 shadow-md shadow-indigo-600/30"
               >
                 <Headphones className="w-4 h-4" />
-                <span>Contact Support</span>
+                <span>Join Official WhatsApp Group / Support</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             </div>
@@ -1724,14 +1870,15 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
               {/* 13. Customer Support */}
               <a
-                href="https://wa.me/919876543210?text=Hi%20Fire%20Arena%20Pro%20Support,%20I%20need%20help"
+                href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
                 target="_blank"
                 rel="noreferrer"
-                className="w-full p-3 rounded-xl bg-black/40 hover:bg-red-950/30 border border-slate-900 text-left flex items-center justify-between text-xs text-slate-300 transition-colors cursor-pointer"
+                className="w-full p-3 rounded-xl bg-black/40 hover:bg-emerald-950/30 border border-slate-900 hover:border-emerald-500/30 text-left flex items-center justify-between text-xs text-slate-300 transition-colors cursor-pointer"
+                title="Join Official WhatsApp Group / Support"
               >
                 <div className="flex items-center gap-3">
                   <Headphones className="w-4 h-4 text-emerald-400" />
-                  <span className="font-semibold text-white">Customer Support</span>
+                  <span className="font-semibold text-white">Join Official WhatsApp Group / Support</span>
                 </div>
                 <ExternalLink className="w-4 h-4 text-slate-500" />
               </a>
@@ -1995,6 +2142,18 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             onClose={() => setSelectedTournamentForProof(null)}
             onSuccess={() => {
               showToast('Scorecard proof submitted! Admin will verify and disburse prizes.');
+            }}
+          />
+        )}
+
+        {/* In-App Notification Center Modal */}
+        {notificationCenterOpen && (
+          <NotificationCenterModal
+            isOpen={notificationCenterOpen}
+            onClose={() => setNotificationCenterOpen(false)}
+            onSelectTournament={(tourId) => {
+              const tour = tournaments.find((t) => t.id === tourId);
+              if (tour) setSelectedTournamentForRules(tour);
             }}
           />
         )}

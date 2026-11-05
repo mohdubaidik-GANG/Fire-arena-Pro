@@ -52,7 +52,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     upiId: '9005939633@ptyes',
     upiName: 'Fire Arena Pro',
     qrCodeUrl: '',
-    supportWhatsapp: '919876543210',
+    supportWhatsapp: 'https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC',
     minDeposit: 100,
     minWithdrawal: 50,
     rules: 'Deposit is credited within 5-15 mins of UTR verification. Withdrawals processed 24/7.',

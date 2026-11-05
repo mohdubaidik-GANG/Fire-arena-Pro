@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, User, Crosshair, Shield, Check, AlertCircle, Save, LogOut } from 'lucide-react';
+import { X, User, Crosshair, Shield, Check, AlertCircle, Save, LogOut, Headphones } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface ProfileModalProps {
@@ -233,8 +233,21 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, onO
             </button>
           </form>
 
-          {/* Logout Action */}
+          {/* Join Official WhatsApp Group / Support */}
           <div className="pt-2 border-t border-slate-800/80">
+            <a
+              href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
+              target="_blank"
+              rel="noreferrer"
+              className="w-full h-10 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <Headphones className="w-4 h-4 text-emerald-400" />
+              <span>Join Official WhatsApp Group / Support</span>
+            </a>
+          </div>
+
+          {/* Logout Action */}
+          <div>
             <button
               type="button"
               onClick={async () => {

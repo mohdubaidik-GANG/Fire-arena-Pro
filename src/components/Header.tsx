@@ -1,17 +1,26 @@
 import React, { useState } from 'react';
-import { Globe, Headphones, Plus, User, LogOut, Check } from 'lucide-react';
+import { Globe, Headphones, Plus, Bell, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { PWAInstallButton } from './PWAInstallButton';
+import { sound } from '../utils/audio';
 
 interface HeaderProps {
   onOpenWallet: (tab?: 'overview' | 'deposit' | 'withdraw' | 'history') => void;
   onOpenProfile: () => void;
+  onOpenNotifications?: () => void;
+  unreadNotificationsCount?: number;
   onLogout?: () => void;
   isAdminRoute?: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenWallet, onOpenProfile, onLogout, isAdminRoute = false }) => {
-  const { user, profile, isAdmin, logout } = useAuth();
+export const Header: React.FC<HeaderProps> = ({ 
+  onOpenWallet, 
+  onOpenProfile, 
+  onOpenNotifications,
+  unreadNotificationsCount = 0,
+  isAdminRoute = false 
+}) => {
+  const { user, profile } = useAuth();
   const [langMenuOpen, setLangMenuOpen] = useState(false);
   const [currentLang, setCurrentLang] = useState<'EN' | 'HI'>('EN');
 
@@ -43,8 +52,26 @@ export const Header: React.FC<HeaderProps> = ({ onOpenWallet, onOpenProfile, onL
           </div>
         </div>
 
-        {/* Right: Language Icon (🌐), Customer Support (🎧), and Red Wallet Pill Capsule "🪙 [0.00] | +" */}
+        {/* Right: Language Icon, Notification Bell, WhatsApp Support, and Red Wallet Capsule */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Notification Bell (🔔) with unread badge counter */}
+          <button
+            onClick={() => {
+              sound.playClick();
+              onOpenNotifications?.();
+            }}
+            className="relative w-8 h-8 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-800 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer"
+            title="Notifications & Room Alerts"
+            aria-label="Notifications & Room Alerts"
+          >
+            <Bell className="w-4 h-4 text-slate-300 hover:text-red-400" />
+            {unreadNotificationsCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-[9px] font-black font-mono text-white flex items-center justify-center border border-[#06070a] shadow-[0_0_8px_rgba(239,68,68,0.9)] animate-pulse">
+                {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+              </span>
+            )}
+          </button>
+
           {/* Language Selector (🌐) */}
           <div className="relative">
             <button
@@ -82,16 +109,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenWallet, onOpenProfile, onL
             )}
           </div>
 
-          {/* Customer Support Icon (🎧) */}
+          {/* Official WhatsApp Support & Group */}
           <a
-            href="https://wa.me/919876543210?text=Hi%20Fire%20Arena%20Pro%20Support,%20I%20need%20help%20with%20tournaments"
+            href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
             target="_blank"
             rel="noreferrer"
-            className="w-8 h-8 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-800 flex items-center justify-center text-slate-300 hover:text-red-400 transition-colors cursor-pointer"
-            title="Customer Support (10 AM - 10 PM)"
-            aria-label="Customer Support"
+            className="w-8 h-8 rounded-full bg-slate-900/90 hover:bg-emerald-950/60 border border-slate-800 hover:border-emerald-500/40 flex items-center justify-center text-slate-300 hover:text-emerald-400 transition-colors cursor-pointer"
+            title="Join Official WhatsApp Group / Support"
+            aria-label="Join Official WhatsApp Group / Support"
           >
-            <Headphones className="w-4 h-4 text-slate-300 hover:text-red-400" />
+            <Headphones className="w-4 h-4 text-slate-300 hover:text-emerald-400" />
           </a>
 
           {/* Red Wallet Pill Capsule showing Balance: "🪙 [0.00] | +" */}

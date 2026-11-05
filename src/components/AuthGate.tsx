@@ -586,12 +586,13 @@ export const AuthGate: React.FC = () => {
               </div>
 
               <a
-                href="https://wa.me/919876543210?text=Hi%20FireArena%20Admin,%20I%20need%20help%20with%20my%20login%20password"
+                href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
                 target="_blank"
                 rel="noreferrer"
                 className="h-8 px-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs flex items-center gap-1.5 shrink-0 transition-colors"
+                title="Join Official WhatsApp Group / Support"
               >
-                <span>WhatsApp</span>
+                <span>WhatsApp Support</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>

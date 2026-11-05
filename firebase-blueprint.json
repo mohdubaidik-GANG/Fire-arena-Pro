@@ -165,9 +165,35 @@
         "createdAt": { "type": "string" }
       },
       "required": ["tournamentId", "userId", "userIgn", "freeFireUid", "screenshotUrl", "status"]
+    },
+    "appNotification": {
+      "title": "AppNotification",
+      "description": "System, tournament, room ID delivery, or broadcast notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "category": { "type": "string" },
+        "roomId": { "type": "string", "maxLength": 50 },
+        "roomPassword": { "type": "string", "maxLength": 50 },
+        "tournamentId": { "type": "string" },
+        "matchTitle": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["title", "message", "category", "createdAt"]
     }
   },
   "firestore": {
+    "/broadcast_notifications/{notificationId}": {
+      "schema": "appNotification",
+      "description": "Global broadcast notifications for all players"
+    },
+    "/users/{userId}/notifications/{notificationId}": {
+      "schema": "appNotification",
+      "description": "User specific alerts and room credential deliveries"
+    },
     "/users/{userId}": {
       "schema": "userProfile",
       "description": "User profiles with wallet balances and gaming credentials"

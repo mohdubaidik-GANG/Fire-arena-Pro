@@ -26,6 +26,9 @@ import {
   Sparkles,
   ExternalLink,
   LogOut,
+  Bell,
+  Megaphone,
+  Radio,
 } from 'lucide-react';
 import {
   collection,
@@ -39,7 +42,9 @@ import {
   onSnapshot,
   runTransaction,
   writeBatch,
-  increment
+  increment,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -51,7 +56,9 @@ import {
   AdminSettings,
   TournamentCategory,
   TournamentMode,
-  TournamentStatus
+  TournamentStatus,
+  AppNotification,
+  NotificationCategory
 } from '../../types';
 
 interface AdminDashboardProps {
@@ -60,7 +67,7 @@ interface AdminDashboardProps {
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const { user, profile, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'tournaments' | 'deposits' | 'withdrawals' | 'users' | 'settings'>('tournaments');
+  const [activeTab, setActiveTab] = useState<'tournaments' | 'deposits' | 'withdrawals' | 'users' | 'settings' | 'notifications'>('tournaments');
 
   // Tournaments State
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
@@ -88,12 +95,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     upiId: '9005939633@ptyes',
     upiName: 'Fire Arena Pro',
     qrCodeUrl: '',
-    supportWhatsapp: '919876543210',
+    supportWhatsapp: 'https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC',
     minDeposit: 20,
     minWithdrawal: 50,
     rules: 'Entry fee is deducted from Deposit balance. Winnings can be withdrawn via UPI or Redeem codes.',
   });
   const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Broadcast Notifications State
+  const [broadcastList, setBroadcastList] = useState<AppNotification[]>([]);
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [notifCategory, setNotifCategory] = useState<NotificationCategory>('ANNOUNCEMENT');
+  const [notifRoomId, setNotifRoomId] = useState('');
+  const [notifRoomPass, setNotifRoomPass] = useState('');
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
 
   // State for match deletion modal and admin feedback toasts
   const [matchToDelete, setMatchToDelete] = useState<{ id: string; title?: string } | null>(null);
@@ -106,6 +122,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setAdminToast((curr) => (curr?.message === message ? null : curr));
     }, 4000);
   }, []);
+
+  // Sync broadcast notifications in real-time
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(collection(db, 'broadcast_notifications'), orderBy('createdAt', 'desc'), limit(40)),
+      (snap) => {
+        const list = snap.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<AppNotification, 'id'>),
+        }));
+        setBroadcastList(list);
+      },
+      (err) => console.warn('Broadcast notifs listener:', err)
+    );
+    return () => unsub();
+  }, []);
+
+  const handleSendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notifTitle.trim() || !notifMessage.trim()) {
+      showToast('Please enter both title and message.', 'error');
+      return;
+    }
+    setIsSendingNotif(true);
+    try {
+      await addDoc(collection(db, 'broadcast_notifications'), {
+        title: notifTitle.trim(),
+        message: notifMessage.trim(),
+        category: notifCategory,
+        roomId: notifRoomId.trim() || null,
+        roomPassword: notifRoomPass.trim() || null,
+        createdAt: new Date().toISOString(),
+      });
+      showToast('Broadcast notification successfully sent to all players!', 'success');
+      setNotifTitle('');
+      setNotifMessage('');
+      setNotifRoomId('');
+      setNotifRoomPass('');
+    } catch (err: unknown) {
+      showToast(`Failed to send broadcast: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
+  const handleDeleteBroadcast = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'broadcast_notifications', id));
+      showToast('Notification removed.', 'success');
+    } catch (err) {
+      showToast('Failed to delete notification', 'error');
+    }
+  };
 
   // Internal persistent map refs for real-time match synchronization
   const tourneysMapRef = useRef<Map<string, Tournament>>(new Map());
@@ -692,6 +761,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           >
             <Settings className="w-4 h-4" />
             <span>Payment & QR Settings</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('notifications')}
+            className={`h-10 px-4 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'notifications'
+                ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-lg shadow-red-950/60 border border-red-500'
+                : 'bg-[#090a12] border border-red-950/60 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Bell className="w-4 h-4" />
+            <span>Broadcast Alerts ({broadcastList.length})</span>
           </button>
         </div>
 
@@ -1332,7 +1413,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   type="text"
                   value={settings.supportWhatsapp}
                   onChange={(e) => setSettings({ ...settings, supportWhatsapp: e.target.value })}
-                  placeholder="e.g. 919876543210"
+                  placeholder="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
                   className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white font-mono text-sm focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -1358,6 +1439,186 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </form>
           </div>
         )}
+
+        {/* ================= TAB 6: BROADCAST ALERTS ================= */}
+        {activeTab === 'notifications' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-black font-heading text-white uppercase tracking-wide flex items-center gap-2">
+                  <Megaphone className="w-5 h-5 text-red-500" />
+                  <span>Broadcast Notification Sender</span>
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Dispatch instantaneous broadcast notices, room IDs & giveaway announcements to all app players.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left Column: Dispatch Card */}
+              <div className="lg:col-span-5 bg-[#0b0c14] border border-red-950/80 rounded-2xl p-5 shadow-xl space-y-4">
+                <div className="flex items-center gap-2.5 pb-3 border-b border-red-950/60">
+                  <div className="w-8 h-8 rounded-lg bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-400">
+                    <Radio className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white uppercase font-heading">
+                      Compose Broadcast Alert
+                    </h3>
+                    <p className="text-[11px] text-slate-400">Pushed live to all active players</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSendBroadcast} className="space-y-3.5 text-xs">
+                  <div>
+                    <label className="block text-slate-300 font-bold uppercase text-[10px] tracking-wider mb-1">
+                      Notification Title <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={notifTitle}
+                      onChange={(e) => setNotifTitle(e.target.value)}
+                      placeholder="e.g. 🚨 Custom Room Starting in 5 Mins!"
+                      required
+                      className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-bold uppercase text-[10px] tracking-wider mb-1">
+                      Category Tag <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(['ANNOUNCEMENT', 'ROOM_ALERT', 'WALLET', 'TOURNAMENT'] as NotificationCategory[]).map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setNotifCategory(cat)}
+                          className={`py-1.5 px-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer border text-center ${
+                            notifCategory === cat
+                              ? 'bg-red-600 border-red-500 text-white shadow-md shadow-red-600/30'
+                              : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {cat.replace('_', ' ')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-bold uppercase text-[10px] tracking-wider mb-1">
+                      Message Body <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={notifMessage}
+                      onChange={(e) => setNotifMessage(e.target.value)}
+                      placeholder="e.g. Bermuda Full Map match starts at 8:00 PM IST. Please be ready in Free Fire MAX."
+                      required
+                      className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-white text-xs focus:outline-none focus:border-red-500"
+                    />
+                  </div>
+
+                  {/* Optional Room ID & Password */}
+                  <div className="p-3 rounded-xl bg-black/40 border border-amber-500/30 space-y-2">
+                    <span className="text-[10px] font-black text-amber-400 uppercase tracking-wider block">
+                      Optional: Attach Room Credentials (1-Tap Copy)
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <input
+                          type="text"
+                          value={notifRoomId}
+                          onChange={(e) => setNotifRoomId(e.target.value)}
+                          placeholder="Room ID"
+                          className="w-full h-8 px-2.5 rounded-lg bg-slate-900 border border-slate-800 text-white font-mono text-xs focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <input
+                          type="text"
+                          value={notifRoomPass}
+                          onChange={(e) => setNotifRoomPass(e.target.value)}
+                          placeholder="Password"
+                          className="w-full h-8 px-2.5 rounded-lg bg-slate-900 border border-slate-800 text-white font-mono text-xs focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSendingNotif}
+                    className="w-full h-11 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>{isSendingNotif ? 'Dispatching...' : 'Dispatch Live Broadcast'}</span>
+                  </button>
+                </form>
+              </div>
+
+              {/* Right Column: Broadcast History */}
+              <div className="lg:col-span-7 bg-[#0b0c14] border border-red-950/80 rounded-2xl p-5 shadow-xl space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-red-950/60">
+                  <div className="flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-red-400" />
+                    <h3 className="text-sm font-bold text-white uppercase font-heading">
+                      Recent Broadcast History ({broadcastList.length})
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+                  {broadcastList.length === 0 ? (
+                    <div className="py-12 text-center text-slate-500 text-xs">
+                      No broadcast notifications sent yet. Use the composer on the left to send announcements.
+                    </div>
+                  ) : (
+                    broadcastList.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-start justify-between gap-3 text-xs"
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-red-950/60 border border-red-500/40 text-red-300">
+                              {item.category}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {new Date(item.createdAt).toLocaleString('en-IN', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-white text-sm truncate">{item.title}</h4>
+                          <p className="text-slate-300 text-xs whitespace-pre-line">{item.message}</p>
+                          {item.roomId && (
+                            <div className="mt-1 text-[11px] font-mono text-amber-400 bg-black/40 px-2 py-1 rounded inline-block">
+                              Room ID: {item.roomId} | Pass: {item.roomPassword || 'None'}
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => handleDeleteBroadcast(item.id)}
+                          className="text-slate-500 hover:text-red-400 p-1.5 rounded-lg bg-slate-900 border border-slate-800 shrink-0 cursor-pointer transition-colors"
+                          title="Delete broadcast"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {/* ================= MODAL: CREATE TOURNAMENT ================= */}
@@ -1374,6 +1635,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           tournament={editingRoomTour}
           isOpen={Boolean(editingRoomTour)}
           onClose={() => setEditingRoomTour(null)}
+          onSuccess={(msg) => showToast(msg, 'success')}
         />
       )}
 
@@ -1769,21 +2031,29 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
 };
 
 /* ---------------- EDIT ROOM ID & PASSWORD MODAL ---------------- */
-const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose: () => void }> = ({
+const EditRoomModal: React.FC<{ 
+  tournament: Tournament; 
+  isOpen: boolean; 
+  onClose: () => void;
+  onSuccess?: (msg: string) => void;
+}> = ({
   tournament,
   isOpen,
   onClose,
+  onSuccess,
 }) => {
   const [roomId, setRoomId] = useState(tournament.roomId || '');
   const [roomPassword, setRoomPassword] = useState(tournament.roomPassword || '');
   const [status, setStatus] = useState(tournament.status || 'upcoming');
   const [isSaving, setIsSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    setErrorMsg(null);
     const trimmedId = roomId.trim();
     const trimmedPass = roomPassword.trim();
 
@@ -1815,10 +2085,43 @@ const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose
         console.warn('Update matches doc note:', matchErr);
       }
 
-      alert(`Room ID (${trimmedId}) & Password successfully published! Real-time credentials are now live on registered players' screens.`);
+      // 3. Auto Room ID & Password Delivery: Dispatch live alerts to registered players
+      if (trimmedId && trimmedPass) {
+        const joinedPlayers = tournament.joinedPlayers || [];
+        
+        // Dispatch personal alert to each registered user
+        const userAlertPromises = joinedPlayers.map((player) =>
+          addDoc(collection(db, 'users', player.uid, 'notifications'), {
+            title: '🚨 ROOM ID & PASS RELEASED!',
+            message: `Match: ${tournament.title}\nRoom ID: ${trimmedId} | Pass: ${trimmedPass}\nOpen Free Fire MAX and enter custom room immediately!`,
+            category: 'ROOM_ALERT',
+            roomId: trimmedId,
+            roomPassword: trimmedPass,
+            tournamentId: tournament.id,
+            matchTitle: tournament.title,
+            createdAt: new Date().toISOString(),
+          }).catch((err) => console.warn('User notification error:', err))
+        );
+
+        // Also broadcast to public feed for quick copy
+        const broadcastPromise = addDoc(collection(db, 'broadcast_notifications'), {
+          title: `🚨 ROOM ID & PASS: ${tournament.title}`,
+          message: `Room ID: ${trimmedId} | Pass: ${trimmedPass}. Joined players please enter custom room now!`,
+          category: 'ROOM_ALERT',
+          roomId: trimmedId,
+          roomPassword: trimmedPass,
+          tournamentId: tournament.id,
+          matchTitle: tournament.title,
+          createdAt: new Date().toISOString(),
+        }).catch((err) => console.warn('Broadcast notification error:', err));
+
+        await Promise.allSettled([...userAlertPromises, broadcastPromise]);
+      }
+
+      onSuccess?.(`Room ID (${trimmedId}) & Password published! Live notifications dispatched.`);
       onClose();
     } catch (err: unknown) {
-      alert(`Error updating room details: ${err instanceof Error ? err.message : String(err)}`);
+      setErrorMsg(`Error updating room details: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsSaving(false);
     }
@@ -1885,6 +2188,12 @@ const EditRoomModal: React.FC<{ tournament: Tournament; isOpen: boolean; onClose
               <option value="completed">Completed</option>
             </select>
           </div>
+
+          {errorMsg && (
+            <div className="p-2.5 rounded-lg bg-red-950/50 border border-red-500/40 text-red-300 text-xs">
+              {errorMsg}
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <button

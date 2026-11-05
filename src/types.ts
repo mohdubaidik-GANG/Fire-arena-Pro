@@ -160,3 +160,25 @@ export const SUPER_ADMIN_EMAILS = [
   'ubada900593@gmail.com',
   'mohdubaid.ik@gmail.com'
 ];
+
+export type NotificationCategory =
+  | 'ROOM_ALERT'
+  | 'ANNOUNCEMENT'
+  | 'WALLET'
+  | 'TOURNAMENT'
+  | 'SYSTEM';
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  category: NotificationCategory;
+  roomId?: string;
+  roomPassword?: string;
+  tournamentId?: string;
+  matchTitle?: string;
+  createdAt: string;
+  isRead?: boolean;
+  userId?: string;
+  actionUrl?: string;
+}
