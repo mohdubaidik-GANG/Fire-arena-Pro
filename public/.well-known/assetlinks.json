@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.vercel.fire_arena_pro.twa",
+    "sha256_cert_fingerprints": ["8E:44:CB:4A:EB:EC:10:37:55:8D:4A:0D:9D:9C:1F:9E:F8:B6:BF:6E:00:E6:FE:E6:56:39:65:76:DD:91:53:FE"]
+  }
+}]

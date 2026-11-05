@@ -160,7 +160,14 @@ async function startServer() {
     res.sendFile(path.join(publicPath, 'manifest.json'));
   });
 
-  app.use(express.static(publicPath));
+  // Android Digital Asset Links for TWA Fullscreen Verification
+  app.get('/.well-known/assetlinks.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.sendFile(path.join(publicPath, '.well-known', 'assetlinks.json'));
+  });
+
+  app.use(express.static(publicPath, { dotfiles: 'allow' }));
 
   if (!isProd) {
     const vite = await createViteServer({
@@ -170,7 +177,7 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    app.use(express.static(distPath, { dotfiles: 'allow' }));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
