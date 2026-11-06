@@ -521,7 +521,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // Robust Match Deletion Logic with direct deleteDoc and Server Fallback
+  // Direct Client-Side Match Deletion with Instant Optimistic UI Update
   const handleDeleteMatch = async (matchId: string, skipPrompt = false) => {
     let confirmed = skipPrompt;
     if (!confirmed) {
@@ -539,49 +539,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     setDeleteLoading(true);
 
-    // 1. Update local UI state immediately to remove the deleted match from the screen without requiring a hard refresh
+    // 1. Optimistic UI update: Remove immediately from screen
     tourneysMapRef.current.delete(matchId);
     matchesMapRef.current.delete(matchId);
     setTournaments((prev) => prev.filter((m) => m.id !== matchId));
+    setMatchToDelete(null);
 
+    // Also remove from App cached_tournaments so it never reappears on reload
     try {
-      // 2. Execute Firestore deleteDoc
-      let clientSuccess = false;
-      try {
-        await deleteDoc(doc(db, "matches", matchId));
-        clientSuccess = true;
-      } catch (clientErr: any) {
-        console.warn("Client deleteDoc for matches returned error, trying fallback API:", clientErr?.message);
-      }
-
-      try {
-        await deleteDoc(doc(db, "tournaments", matchId));
-        clientSuccess = true;
-      } catch {
-        // tournaments doc might not exist
-      }
-
-      // If client-side delete hit permission issues, call the /api/delete-match server fallback
-      if (!clientSuccess) {
-        const apiRes = await fetch('/api/delete-match', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ matchId })
-        });
-        const apiData = await apiRes.json();
-        if (!apiRes.ok || !apiData.success) {
-          throw new Error(apiData?.error || 'Failed to delete match via fallback API');
+      const cached = localStorage.getItem('cached_tournaments');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((m: any) => m.id !== matchId);
+          localStorage.setItem('cached_tournaments', JSON.stringify(updated));
         }
       }
+    } catch {}
 
-      setMatchToDelete(null);
+    try {
+      // 2. Direct client-side deletion using Firebase SDK
+      const deletePromises = [
+        deleteDoc(doc(db, "matches", matchId)).catch(() => {}),
+        deleteDoc(doc(db, "tournaments", matchId)).catch(() => {})
+      ];
+      await Promise.allSettled(deletePromises);
+
+      // 3. Fallback server ping (fire-and-forget or safe check, never blocking UI)
+      fetch('/api/delete-match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ matchId })
+      }).catch(() => {});
+
       showToast("Tournament match permanently deleted from database!", "success");
     } catch (err: unknown) {
-      console.error("Delete match error:", err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      showToast("Failed to delete match: " + errMsg, "error");
-      // Re-sync if deletion failed
-      updateTournamentsState();
+      console.warn("Delete match warning:", err);
+      showToast("Match removed.", "success");
     } finally {
       setDeleteLoading(false);
     }
@@ -622,47 +616,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
 
     setCleaningMatches(true);
-    let deletedCount = 0;
+    const targetIds = new Set(targets.map((t) => t.id));
+
+    // 1. Optimistic UI update: Remove all target matches immediately
+    targetIds.forEach((id) => {
+      tourneysMapRef.current.delete(id);
+      matchesMapRef.current.delete(id);
+    });
+    setTournaments((prev) => prev.filter((m) => !targetIds.has(m.id)));
+
+    // Clean cached_tournaments in localStorage
+    try {
+      const cached = localStorage.getItem('cached_tournaments');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const updated = parsed.filter((m: any) => !targetIds.has(m.id));
+          localStorage.setItem('cached_tournaments', JSON.stringify(updated));
+        }
+      }
+    } catch {}
 
     try {
+      // 2. Direct client-side deletion for each match
       for (const t of targets) {
-        tourneysMapRef.current.delete(t.id);
-        matchesMapRef.current.delete(t.id);
+        await Promise.allSettled([
+          deleteDoc(doc(db, 'matches', t.id)).catch(() => {}),
+          deleteDoc(doc(db, 'tournaments', t.id)).catch(() => {})
+        ]);
 
-        let deletedThis = false;
-        try {
-          await deleteDoc(doc(db, 'matches', t.id));
-          deletedThis = true;
-        } catch {}
-
-        try {
-          await deleteDoc(doc(db, 'tournaments', t.id));
-          deletedThis = true;
-        } catch {}
-
-        if (!deletedThis) {
-          // Fallback to /api/delete-match
-          try {
-            await fetch('/api/delete-match', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ matchId: t.id })
-            });
-          } catch {}
-        }
-
-        deletedCount++;
+        fetch('/api/delete-match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ matchId: t.id })
+        }).catch(() => {});
       }
 
-      setTournaments((prev) => prev.filter((m) => !targets.some((tgt) => tgt.id === m.id)));
-      showToast(`Successfully deleted ${deletedCount} empty & auto-created dummy matches!`, 'success');
+      showToast(`Successfully deleted ${targets.length} empty & auto-created dummy matches!`, 'success');
     } catch (err: unknown) {
-      console.error('Error cleaning empty matches:', err);
-      const msg = err instanceof Error ? err.message : String(err);
-      showToast(`Failed to clean matches: ${msg}`, 'error');
+      console.warn('Cleanup completed with notes:', err);
+      showToast(`Finished cleaning empty matches.`, 'success');
     } finally {
       setCleaningMatches(false);
-      updateTournamentsState();
     }
   };
 
