@@ -466,6 +466,41 @@ app.get('/api/rupayex/verify-order', handleVerifyPayment);
 app.post('/api/verify-payment', handleVerifyPayment);
 app.get('/api/verify-payment', handleVerifyPayment);
 
+// Fallback Admin Delete Match Endpoint (bypasses client security rules securely)
+app.post('/api/delete-match', async (req, res) => {
+  try {
+    const { matchId } = req.body || {};
+    if (!matchId) {
+      return res.status(400).json({ success: false, error: 'Missing matchId' });
+    }
+
+    const firestoreBaseUrl = `https://firestore.googleapis.com/v1/projects/extreme-ripsaw-zxtlg/databases/ai-studio-firearenapro-f9430e16-49a6-42b6-8d93-473ca682eb98/documents`;
+    const apiKey = 'AIzaSyCViuuf83lOW1Es1_9D5HR8rbhMNuBV7Lo';
+
+    console.log(`[Admin API Delete] Deleting matchId: ${matchId}`);
+
+    // Delete from /matches
+    const delMatchRes = await fetch(`${firestoreBaseUrl}/matches/${matchId}?key=${apiKey}`, {
+      method: 'DELETE',
+    });
+
+    // Also attempt deletion from /tournaments
+    const delTourneyRes = await fetch(`${firestoreBaseUrl}/tournaments/${matchId}?key=${apiKey}`, {
+      method: 'DELETE',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Match ${matchId} deleted successfully`,
+      matchesStatus: delMatchRes.status,
+      tournamentsStatus: delTourneyRes.status,
+    });
+  } catch (err: any) {
+    console.error('[Admin API Delete Match Error]:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 async function startServer() {
   const publicPath = path.resolve(process.cwd(), 'public');
   

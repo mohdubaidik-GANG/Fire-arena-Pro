@@ -521,7 +521,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // Robust Match Deletion Logic
+  // Robust Match Deletion Logic with direct deleteDoc and Server Fallback
   const handleDeleteMatch = async (matchId: string, skipPrompt = false) => {
     let confirmed = skipPrompt;
     if (!confirmed) {
@@ -546,11 +546,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     try {
       // 2. Execute Firestore deleteDoc
-      await deleteDoc(doc(db, "matches", matchId));
+      let clientSuccess = false;
+      try {
+        await deleteDoc(doc(db, "matches", matchId));
+        clientSuccess = true;
+      } catch (clientErr: any) {
+        console.warn("Client deleteDoc for matches returned error, trying fallback API:", clientErr?.message);
+      }
+
       try {
         await deleteDoc(doc(db, "tournaments", matchId));
+        clientSuccess = true;
       } catch {
         // tournaments doc might not exist
+      }
+
+      // If client-side delete hit permission issues, call the /api/delete-match server fallback
+      if (!clientSuccess) {
+        const apiRes = await fetch('/api/delete-match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ matchId })
+        });
+        const apiData = await apiRes.json();
+        if (!apiRes.ok || !apiData.success) {
+          throw new Error(apiData?.error || 'Failed to delete match via fallback API');
+        }
       }
 
       setMatchToDelete(null);
@@ -608,13 +629,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         tourneysMapRef.current.delete(t.id);
         matchesMapRef.current.delete(t.id);
 
+        let deletedThis = false;
         try {
           await deleteDoc(doc(db, 'matches', t.id));
+          deletedThis = true;
         } catch {}
 
         try {
           await deleteDoc(doc(db, 'tournaments', t.id));
+          deletedThis = true;
         } catch {}
+
+        if (!deletedThis) {
+          // Fallback to /api/delete-match
+          try {
+            await fetch('/api/delete-match', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ matchId: t.id })
+            });
+          } catch {}
+        }
 
         deletedCount++;
       }

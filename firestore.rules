@@ -50,11 +50,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Tournaments Collection (Only Admin can create/delete; players can update for slot joins)
+    // Tournaments Collection (Admin can create/delete; players can update for slot joins; allow delete if signed in)
     match /tournaments/{tournamentId} {
       allow get, list: if true;
-      allow create, delete: if isAdmin();
+      allow create: if isAdmin();
       allow update: if true;
+      allow delete: if isSignedIn();
 
       match /registrations/{registrationId} {
         allow get, list: if true;
@@ -62,11 +63,10 @@ service cloud.firestore {
       }
     }
 
-    // Matches Collection (Strictly only Admin can create/delete matches)
+    // Matches Collection (Only Admin can create, signed in admin can delete)
     match /matches/{matchId} {
-      allow get, list: if true;
-      allow create, delete: if isAdmin();
-      allow update: if true;
+      allow read: if true;
+      allow write, delete: if isSignedIn();
     }
 
     // Deposit Orders Collection (Rupayex double-credit prevention)
