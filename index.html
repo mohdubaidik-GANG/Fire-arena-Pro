@@ -36,6 +36,27 @@
       <img src="/logo.png" alt="Fire Arena Pro" style="width:130px;height:130px;object-fit:contain;filter:drop-shadow(0 0 15px rgba(234,179,8,0.4));animation:pulse 1.5s infinite alternate;" />
       <p style="margin-top:16px;color:#eab308;font-weight:800;letter-spacing:2px;font-family:sans-serif;">FIRE ARENA PRO</p>
     </div>
+    <script>
+      (function() {
+        var splash = document.getElementById('pwa-splash');
+        function removeSplash() {
+          if (!splash) return;
+          splash.style.transition = 'opacity 0.4s ease, visibility 0.4s ease';
+          splash.style.opacity = '0';
+          splash.style.pointerEvents = 'none';
+          setTimeout(function() {
+            if (splash && splash.parentNode) {
+              splash.parentNode.removeChild(splash);
+            }
+          }, 400);
+        }
+        // Force dismiss after 1.5 seconds maximum so the app never freezes on the logo
+        setTimeout(removeSplash, 1500);
+        window.addEventListener('load', function() {
+          setTimeout(removeSplash, 300);
+        });
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>

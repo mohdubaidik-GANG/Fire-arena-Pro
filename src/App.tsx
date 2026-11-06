@@ -36,7 +36,9 @@ import {
   ArrowRight,
   Crown,
   Receipt,
-  XCircle
+  XCircle,
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 import { collection, query, where, limit, onSnapshot, getDocs, getDoc, setDoc, doc, addDoc, updateDoc, increment } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
@@ -60,21 +62,95 @@ const MatchRulesModal = React.lazy(() => import('./components/MatchRulesModal').
 const ProofSubmissionModal = React.lazy(() => import('./components/ProofSubmissionModal').then(m => ({ default: m.ProofSubmissionModal })));
 const NotificationCenterModal = React.lazy(() => import('./components/NotificationCenterModal').then(m => ({ default: m.NotificationCenterModal })));
 
+// React Error Boundary Component to prevent white/black screen freeze
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[Fire Arena Pro ErrorBoundary]:', error, errorInfo);
+  }
+
+  handleReload = () => {
+    try {
+      localStorage.removeItem('cached_tournaments');
+    } catch {}
+    window.location.reload();
+  };
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#07080f] text-white flex flex-col items-center justify-center p-6 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500 mb-4 shadow-lg shadow-red-600/20">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-heading font-black uppercase tracking-wider mb-2 text-white">
+            Connection or Display Interrupted
+          </h2>
+          <p className="text-xs text-slate-400 max-w-md mb-6 leading-relaxed">
+            {this.state.error?.message ||
+              'A temporary network or rendering error occurred. Tap below to reload the esports arena.'}
+          </p>
+          <button
+            onClick={this.handleReload}
+            className="px-6 py-3 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider shadow-lg shadow-red-950/60 cursor-pointer flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Reload Arena</span>
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // Root App Component
 export default function App() {
   return (
-    <AuthProvider>
-      <MainRouter />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <MainRouter />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
 // Router and Main Content Controller
 function MainRouter() {
   const { user, profile, loading, isAdmin, needsProfileSetup, logout } = useAuth();
+  const [loadingExceeded, setLoadingExceeded] = useState(false);
 
   // URL Path detection for /admin route
   const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname);
+
+  // Safety timer so loading state never freezes indefinitely
+  useEffect(() => {
+    if (loading) {
+      const timer = setTimeout(() => {
+        setLoadingExceeded(true);
+      }, 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setLoadingExceeded(false);
+    }
+  }, [loading]);
 
   // Sync browser path on popstate
   useEffect(() => {
@@ -108,16 +184,32 @@ function MainRouter() {
     setCurrentPath('/');
   };
 
-  // 1. Mandatory Loading State
+  // 1. Mandatory Loading State (with automatic timeout fallback)
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#06070a] text-white">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#06070a] text-white p-4">
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 via-rose-600 to-amber-500 flex items-center justify-center shadow-[0_0_25px_rgba(220,38,38,0.5)] animate-pulse mb-3">
           <Gamepad2 className="w-8 h-8 text-white stroke-[2.5]" />
         </div>
-        <div className="text-xs font-heading font-black uppercase tracking-widest text-red-500">
+        <div className="text-xs font-heading font-black uppercase tracking-widest text-red-500 mb-1">
           FIRE-ARENA-PRO ESPORTS ARENA
         </div>
+        <div className="text-[11px] text-slate-500 font-mono">
+          Connecting to secure gaming server...
+        </div>
+
+        {loadingExceeded && (
+          <button
+            type="button"
+            onClick={() => {
+              window.location.reload();
+            }}
+            className="mt-6 px-4 py-2 rounded-xl bg-red-600/30 hover:bg-red-600/50 text-red-300 border border-red-500/40 text-xs font-bold font-mono uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Taking too long? Tap to Reload</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -198,7 +290,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [modeType, setModeType] = useState<'TOURNAMENT' | 'SOLO'>('TOURNAMENT');
   const [myMatchesFilter, setMyMatchesFilter] = useState<'all' | 'ongoing' | 'upcoming' | 'completed'>('all');
-  const [matchFilterPill, setMatchFilterPill] = useState<'all' | 'Solo' | 'Duo' | 'Squad' | 'cs' | 'free'>('all');
+  const [matchFilterPill, setMatchFilterPill] = useState<'all' | 'Solo' | 'Squad' | 'cs' | 'daily20' | 'Duo' | 'free'>('all');
 
   // Modals State
   const [walletModalOpen, setWalletModalOpen] = useState(false);
@@ -240,6 +332,17 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       return true;
     }
   });
+  const [tournamentsError, setTournamentsError] = useState<string | null>(null);
+
+  const handleRetryMatches = () => {
+    sound.playClick();
+    setFetchingTournaments(true);
+    setTournamentsError(null);
+    try {
+      localStorage.removeItem('cached_tournaments');
+    } catch {}
+    window.location.reload();
+  };
 
   // Ranking Tab Controls
   const [rankingCategory, setRankingCategory] = useState('ALL');
@@ -513,7 +616,8 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         }
       },
       (error) => {
-        console.error('Error fetching tournaments:', error);
+        console.warn('Error fetching tournaments snapshot:', error);
+        setTournamentsError(error?.message || 'Temporary network connection issue.');
         setFetchingTournaments(false);
       }
     );
@@ -641,17 +745,22 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const filteredTournaments = tournaments.filter((t) => {
     if (t.status === 'cancelled') return false;
 
-    // Filter by Dynamic Match Filter Pills ("All", "Solo", "Duo", "Squad", "Clash Squad (CS 4v4)", "Free Entry")
+    // Filter by Dynamic Match Filter Tabs: [ALL], [SOLO], [SQUAD], [CLASH SQUAD], [DAILY ₹20]
     if (matchFilterPill === 'Solo') {
       if (t.mode?.toLowerCase() !== 'solo') return false;
-    } else if (matchFilterPill === 'Duo') {
-      if (t.mode?.toLowerCase() !== 'duo') return false;
     } else if (matchFilterPill === 'Squad') {
       if (t.mode?.toLowerCase() !== 'squad') return false;
     } else if (matchFilterPill === 'cs') {
       const cat = (t.category || '').toLowerCase();
       const title = (t.title || '').toLowerCase();
       if (!cat.includes('cs') && !title.includes('cs') && !cat.includes('clash') && !title.includes('clash')) return false;
+    } else if (matchFilterPill === 'daily20') {
+      const fee = Number(t.entryFee);
+      const title = (t.title || '').toLowerCase();
+      const isDaily20 = fee === 20 || title.includes('20') || title.includes('daily');
+      if (!isDaily20) return false;
+    } else if (matchFilterPill === 'Duo') {
+      if (t.mode?.toLowerCase() !== 'duo') return false;
     } else if (matchFilterPill === 'free') {
       const isFree = t.entryFee === 0 || (t.category || '').toLowerCase().includes('free') || (t.title || '').toLowerCase().includes('free');
       if (!isFree) return false;
@@ -1047,15 +1156,14 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                 )}
               </div>
 
-              {/* Dynamic Match Filters Pills ("All", "Solo", "Duo", "Squad", "Clash Squad (CS 4v4)", "Free Entry") */}
+              {/* Dynamic Match Filters Pills: [ALL], [SOLO], [SQUAD], [CLASH SQUAD], [DAILY ₹20] */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
                 {[
-                  { id: 'all', label: 'All' },
-                  { id: 'Solo', label: 'Solo' },
-                  { id: 'Duo', label: 'Duo' },
-                  { id: 'Squad', label: 'Squad' },
-                  { id: 'cs', label: 'Clash Squad (CS 4v4)' },
-                  { id: 'free', label: 'Free Entry' },
+                  { id: 'all', label: 'ALL' },
+                  { id: 'Solo', label: 'SOLO' },
+                  { id: 'Squad', label: 'SQUAD' },
+                  { id: 'cs', label: 'CLASH SQUAD' },
+                  { id: 'daily20', label: 'DAILY ₹20' },
                 ].map((pill) => {
                   const isSelected = matchFilterPill === pill.id;
                   return (
@@ -1066,9 +1174,9 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                         sound.playClick();
                         setMatchFilterPill(pill.id as any);
                       }}
-                      className={`px-3 py-1.5 rounded-full text-xs font-heading font-bold whitespace-nowrap transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-full text-xs font-heading font-black tracking-wider whitespace-nowrap transition-all cursor-pointer ${
                         isSelected
-                          ? 'bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-md shadow-red-600/30'
+                          ? 'bg-gradient-to-r from-red-600 via-rose-600 to-amber-500 text-white shadow-md shadow-red-600/30 ring-1 ring-amber-400/40'
                           : 'bg-[#0e0f18] border border-red-950/60 text-slate-400 hover:text-white hover:border-red-900/60'
                       }`}
                     >
@@ -1078,9 +1186,41 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                 })}
               </div>
 
-              {fetchingTournaments ? (
-                <div className="p-12 text-center text-xs text-slate-500">
-                  Synchronizing Fire Arena Pro custom match rooms...
+              {tournamentsError && filteredTournaments.length === 0 ? (
+                <div className="p-8 rounded-2xl bg-[#0e0a14] border border-red-950/80 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500 mx-auto">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <h3 className="text-sm font-bold text-white font-heading">
+                    Unable to Load Live Match Rooms
+                  </h3>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    {tournamentsError || 'A temporary network interruption occurred while loading tournaments.'}
+                  </p>
+                  <button
+                    onClick={handleRetryMatches}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-heading font-bold text-xs uppercase tracking-wider cursor-pointer shadow-md shadow-red-600/30 inline-flex items-center gap-2"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Retry Loading Matches</span>
+                  </button>
+                </div>
+              ) : fetchingTournaments && filteredTournaments.length === 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[1, 2, 3].map((n) => (
+                    <div
+                      key={n}
+                      className="rounded-2xl bg-[#090a14] border border-red-950/60 p-4 space-y-3 animate-pulse"
+                    >
+                      <div className="h-32 rounded-xl bg-slate-900/90 border border-slate-800/60"></div>
+                      <div className="h-4 w-3/4 rounded bg-slate-800/80"></div>
+                      <div className="h-3 w-1/2 rounded bg-slate-800/50"></div>
+                      <div className="flex justify-between items-center pt-2 border-t border-red-950/30">
+                        <div className="h-5 w-16 rounded bg-slate-800/80"></div>
+                        <div className="h-8 w-24 rounded-lg bg-red-950/50"></div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : filteredTournaments.length === 0 ? (
                 <div className="p-8 rounded-2xl bg-[#090a14] border border-red-950/60 text-center space-y-3">

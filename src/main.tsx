@@ -4,14 +4,15 @@ import './index.css';
 
 createRoot(document.getElementById('root')!).render(<App />);
 
-// Smoothly dismiss PWA splash screen after app initialization
+// Smoothly dismiss PWA splash screen once React mounts
 const splash = document.getElementById('pwa-splash');
 if (splash) {
   setTimeout(() => {
-    splash.style.transition = 'opacity 0.4s ease, visibility 0.4s ease';
+    splash.style.transition = 'opacity 0.3s ease, visibility 0.3s ease';
     splash.style.opacity = '0';
+    splash.style.pointerEvents = 'none';
     setTimeout(() => {
       splash.remove();
-    }, 400);
-  }, 400);
+    }, 300);
+  }, 100);
 }

@@ -11,8 +11,12 @@ import {
   Zap,
   ShieldCheck,
   CheckCircle2,
-  FileText
+  FileText,
+  Key,
+  Copy,
+  Check
 } from 'lucide-react';
+import { sound } from '../utils/audio';
 import { Tournament } from '../types';
 import { useAuth } from '../context/AuthContext';
 
@@ -30,6 +34,7 @@ export const MatchRulesModal: React.FC<MatchRulesModalProps> = ({
   onJoinClick,
 }) => {
   const { user } = useAuth();
+  const [copiedField, setCopiedField] = React.useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -76,6 +81,92 @@ export const MatchRulesModal: React.FC<MatchRulesModalProps> = ({
 
         {/* Content Body */}
         <div className="p-4 sm:p-5 space-y-4 max-h-[75vh] overflow-y-auto">
+          {/* Room ID & Password Box (If Released / Available) */}
+          {tournament && (tournament.roomId || tournament.roomPassword) && (
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-red-950/40 via-black/80 to-amber-950/30 border border-red-500/50 shadow-lg shadow-red-950/30 relative overflow-hidden">
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-amber-400" />
+                    Custom Room Credentials
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono">
+                  ROOM READY
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {/* Room ID Box */}
+                <div className="bg-black/70 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between">
+                  <div className="min-w-0 pr-1">
+                    <span className="text-[10px] font-mono uppercase text-slate-400 block font-semibold">Room ID</span>
+                    <span className="text-sm font-bold text-amber-400 font-mono tracking-wider truncate block">
+                      {tournament.roomId || 'PENDING'}
+                    </span>
+                  </div>
+                  {tournament.roomId && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(tournament.roomId || '');
+                        sound.playCopy();
+                        setCopiedField('room_id');
+                        setTimeout(() => setCopiedField(null), 2000);
+                      }}
+                      className="px-2 py-1 rounded bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                    >
+                      {copiedField === 'room_id' ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+
+                {/* Password Box */}
+                <div className="bg-black/70 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between">
+                  <div className="min-w-0 pr-1">
+                    <span className="text-[10px] font-mono uppercase text-slate-400 block font-semibold">Password</span>
+                    <span className="text-sm font-bold text-emerald-400 font-mono tracking-wider truncate block">
+                      {tournament.roomPassword || 'PENDING'}
+                    </span>
+                  </div>
+                  {tournament.roomPassword && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(tournament.roomPassword || '');
+                        sound.playCopy();
+                        setCopiedField('room_pwd');
+                        setTimeout(() => setCopiedField(null), 2000);
+                      }}
+                      className="px-2 py-1 rounded bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                    >
+                      {copiedField === 'room_pwd' ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-400" />
+                          <span className="text-emerald-400">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copy</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Match Overview Grid (If tournament provided) */}
           {tournament && (
             <div>

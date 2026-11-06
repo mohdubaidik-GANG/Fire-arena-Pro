@@ -16,21 +16,23 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
-// Enable Firestore IndexedDB offline persistence for ultra-fast instant screen switches
+// Enable Firestore IndexedDB offline persistence safely with in-memory fallback
 if (typeof window !== 'undefined') {
-  enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === 'failed-precondition') {
-      console.warn('Firestore persistence warning: multiple tabs open');
-    } else if (err.code === 'unimplemented') {
-      console.warn('Firestore persistence warning: browser does not support IndexedDB');
-    }
-  });
+  try {
+    enableIndexedDbPersistence(db).catch((err) => {
+      console.warn('Firestore offline persistence fallback to in-memory caching:', err?.code || err?.message || err);
+    });
+  } catch (err) {
+    console.warn('Firestore offline persistence initialization bypassed:', err);
+  }
 }
 
-// Enforce browser local persistence across sessions
-setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.warn('Firebase Auth persistence initialization warning:', error);
-});
+// Enforce browser local persistence across sessions safely
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.warn('Firebase Auth persistence initialization warning:', error);
+  });
+}
 
 // Configure GoogleAuthProvider with forced direct Google Account Picker
 export const googleProvider = new GoogleAuthProvider();
@@ -75,17 +77,18 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Initial connection test as mandated by Firebase skill
+// Initial connection test as mandated by Firebase skill (non-blocking)
 async function testConnection() {
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    await getDocFromServer(doc(db, 'test', 'connection')).catch(() => {});
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client is offline. Checking network...');
-    }
+    // Non-blocking connection check warning
+    console.warn('Firebase non-blocking connection notice:', error);
   }
 }
-testConnection();
+if (typeof window !== 'undefined') {
+  setTimeout(testConnection, 1000);
+}
 
 export {
   signInWithPopup,

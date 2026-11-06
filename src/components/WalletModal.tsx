@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
-import { collection, query, where, addDoc, updateDoc, doc, onSnapshot, getDocs, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, addDoc, updateDoc, doc, onSnapshot, getDocs, orderBy, limit, runTransaction, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { DepositRequest, WithdrawalRequest, AdminSettings } from '../types';
@@ -74,6 +74,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [depositSubmitting, setDepositSubmitting] = useState<boolean>(false);
   const [depositSuccessMsg, setDepositSuccessMsg] = useState<string | null>(null);
   const [depositError, setDepositError] = useState<string | null>(null);
+  const [copiedUpi, setCopiedUpi] = useState<boolean>(false);
 
   // Rupayex Verification & Status Check State
   const [pendingOrder, setPendingOrder] = useState<{ orderId: string; amount: number; createdAt: string } | null>(null);
@@ -88,15 +89,30 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
 
   // Withdrawal Form State
-  const [withdrawAmount, setWithdrawAmount] = useState<number>(100);
-  const [withdrawMethod, setWithdrawMethod] = useState<'upi' | 'redeem_code'>('upi');
+  const [withdrawAmount, setWithdrawAmount] = useState<number>(50);
+  const [withdrawMethod, setWithdrawMethod] = useState<'phonepe' | 'gpay' | 'paytm' | 'upi' | 'redeem_code'>('phonepe');
   const [withdrawUpiId, setWithdrawUpiId] = useState<string>('');
+  const [withdrawPhone, setWithdrawPhone] = useState<string>(profile?.phone || '');
   const [deliveryEmail, setDeliveryEmail] = useState<string>(user?.email || '');
   const [withdrawSubmitting, setWithdrawSubmitting] = useState<boolean>(false);
   const [withdrawSuccessMsg, setWithdrawSuccessMsg] = useState<string | null>(null);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [withdrawalReceipt, setWithdrawalReceipt] = useState<{
+    transactionId: string;
+    amount: number;
+    method: string;
+    upiId: string;
+    phone: string;
+    createdAt: string;
+    estimatedTime: string;
+  } | null>(null);
+  const [receiptCopied, setReceiptCopied] = useState<boolean>(false);
 
-  const [copiedUpi, setCopiedUpi] = useState<boolean>(false);
+  useEffect(() => {
+    if (profile?.phone && !withdrawPhone) {
+      setWithdrawPhone(profile.phone);
+    }
+  }, [profile?.phone]);
 
   // Read pending Rupayex order from localStorage
   useEffect(() => {
@@ -420,19 +436,24 @@ export const WalletModal: React.FC<WalletModalProps> = ({
       return;
     }
 
-    const currentWinnings = profile.winningsBalance || 0;
-    if (amount > currentWinnings) {
-      setWithdrawError(`Insufficient Winnings Cash. Your withdrawable balance is ₹${currentWinnings}`);
+    const availableWinnings = Number(profile.winningsBalance ?? (profile as any)?.winning_balance ?? 0);
+    if (amount > availableWinnings) {
+      setWithdrawError(`Insufficient Winning Balance. Your withdrawable balance is ₹${availableWinnings}`);
       return;
     }
 
     const payoutEmail = user?.email || '';
     const cleanUpi = (withdrawUpiId || '').trim();
-    const payoutMethod = withdrawMethod === 'redeem_code' ? 'REDEEM_CODE' : 'UPI';
+    const cleanPhone = (withdrawPhone || profile.phone || '').trim();
     const cleanDeliveryEmail = deliveryEmail ? deliveryEmail.trim() : (user?.email || payoutEmail || '');
 
-    if (withdrawMethod === 'upi' && !cleanUpi.includes('@')) {
-      setWithdrawError('Please enter a valid UPI ID (e.g., yourname@okaxis or number@paytm)');
+    if (withdrawMethod !== 'redeem_code' && (!cleanUpi || !cleanUpi.includes('@'))) {
+      setWithdrawError('Please enter a valid UPI ID (e.g. name@okhdfcbank or 9876543210@paytm)');
+      return;
+    }
+
+    if (withdrawMethod !== 'redeem_code' && cleanPhone.replace(/\D/g, '').length < 10) {
+      setWithdrawError('Please enter a valid 10-digit mobile number to confirm your payout.');
       return;
     }
 
@@ -442,41 +463,107 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     }
 
     setWithdrawSubmitting(true);
+    const withdrawalDocId = `WTH_${Date.now()}_${user.uid.slice(0, 6)}`;
+    const payoutMethodLabel = withdrawMethod === 'phonepe'
+      ? 'PHONEPE_UPI'
+      : withdrawMethod === 'gpay'
+      ? 'GPAY_UPI'
+      : withdrawMethod === 'paytm'
+      ? 'PAYTM_UPI'
+      : withdrawMethod === 'redeem_code'
+      ? 'GOOGLE_PLAY_REDEEM_CODE'
+      : 'DIRECT_UPI';
+
+    const newWithdrawalRecord = {
+      id: withdrawalDocId,
+      orderId: withdrawalDocId,
+      userId: user.uid,
+      userEmail: payoutEmail,
+      userIgn: profile.ign || 'Gamer',
+      userPhone: cleanPhone,
+      amount: Number(amount),
+      method: withdrawMethod,
+      payoutMethod: payoutMethodLabel,
+      upiId: withdrawMethod !== 'redeem_code' ? cleanUpi : '',
+      deliveryEmail: cleanDeliveryEmail,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
     try {
-      // 1. Create withdrawal request document with guaranteed non-undefined values
-      const newWithdrawal: Record<string, any> = {
-        userId: user.uid || '',
-        userEmail: payoutEmail,
-        userIgn: profile.ign || 'Gamer',
-        amount: Number(amount) || 0,
-        method: withdrawMethod || 'upi',
-        payoutMethod: payoutMethod,
-        upiId: withdrawMethod === 'upi' ? cleanUpi : '',
-        deliveryEmail: cleanDeliveryEmail,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
+      const userDocRef = doc(db, 'users', user.uid);
+      const withdrawalDocRef = doc(db, 'withdrawalRequests', withdrawalDocId);
+      const userTxnRef = doc(db, 'users', user.uid, 'transactions', withdrawalDocId);
 
-      // Ensure NO field in the object can ever be undefined
-      Object.keys(newWithdrawal).forEach((key) => {
-        if (newWithdrawal[key] === undefined) {
-          newWithdrawal[key] = '';
+      // Execute atomic Firestore transaction to prevent double spending
+      await runTransaction(db, async (transaction) => {
+        const userDocSnap = await transaction.get(userDocRef);
+        if (!userDocSnap.exists()) {
+          throw new Error('User profile record not found.');
         }
+
+        const currentData = userDocSnap.data();
+        const currentWinnings = Number(currentData.winningsBalance ?? currentData.winning_balance ?? 0);
+
+        if (currentWinnings < amount) {
+          throw new Error(`Insufficient Winning Balance. You have ₹${currentWinnings}`);
+        }
+
+        const remaining = Math.max(0, currentWinnings - amount);
+
+        // Deduct from both winningsBalance and winning_balance atomically
+        transaction.update(userDocRef, {
+          winningsBalance: remaining,
+          winning_balance: remaining,
+          updatedAt: new Date().toISOString(),
+        });
+
+        // Set withdrawal request doc
+        transaction.set(withdrawalDocRef, newWithdrawalRecord);
+
+        // Record in user's passbook transactions
+        transaction.set(userTxnRef, {
+          id: withdrawalDocId,
+          orderId: withdrawalDocId,
+          userId: user.uid,
+          amount: Number(amount),
+          type: 'WITHDRAWAL',
+          status: 'PENDING',
+          method: payoutMethodLabel,
+          upiId: cleanUpi || cleanDeliveryEmail,
+          phone: cleanPhone,
+          note: `Payout via ${payoutMethodLabel}`,
+          createdAt: new Date().toISOString(),
+        });
       });
 
-      await addDoc(collection(db, 'withdrawalRequests'), newWithdrawal);
+      // Sound & confetti celebrate
+      try {
+        sound.playCoin();
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 },
+        });
+      } catch {}
 
-      // 2. Instantly deduct winnings balance so user cannot double-spend
-      await updateDoc(doc(db, 'users', user.uid), {
-        winningsBalance: Math.max(0, currentWinnings - amount),
-        updatedAt: new Date().toISOString(),
+      // Open Popup Receipt Modal
+      setWithdrawalReceipt({
+        transactionId: withdrawalDocId,
+        amount: Number(amount),
+        method: payoutMethodLabel.replace(/_/g, ' '),
+        upiId: cleanUpi || cleanDeliveryEmail,
+        phone: cleanPhone,
+        createdAt: new Date().toISOString(),
+        estimatedTime: '5-15 Minutes',
       });
 
-      // 3. Reset form and show clean green success toast
-      setWithdrawSuccessMsg('Withdrawal request submitted for Admin approval!');
+      setWithdrawSuccessMsg(`Withdrawal of ₹${amount} submitted! Processing in 5-15 mins.`);
       setWithdrawUpiId('');
       setWithdrawAmount(adminSettings.minWithdrawal || 50);
     } catch (err: unknown) {
+      console.error('Withdrawal transaction error:', err);
       const msg = err instanceof Error ? err.message : 'Failed to request withdrawal';
       setWithdrawError(msg);
       handleFirestoreError(err, OperationType.CREATE, 'withdrawalRequests');
@@ -819,24 +906,48 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
           {activeTab === 'withdraw' && (
             /* =================== WITHDRAWAL FLOW =================== */
-            <div className="space-y-6">
+            <div className="space-y-5">
               <button
                 type="button"
                 onClick={() => setActiveTab('overview')}
-                className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer mb-1"
+                className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-semibold cursor-pointer mb-0.5"
               >
                 <ChevronLeft className="w-4 h-4" />
-                <span>Back to Wallet & Stats Overview</span>
+                <span>Back to Wallet & Career Stats</span>
               </button>
 
-              {/* Instructions */}
-              <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-start gap-2.5">
-                <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <div>
-                  <strong>Withdrawable Balance: ₹{profile?.winningsBalance ?? 0}</strong>
-                  <p className="text-slate-400 mt-0.5">
-                    Only Winnings Cash can be withdrawn. Minimum withdrawal is ₹{adminSettings.minWithdrawal || 50}. Payouts processed directly to your UPI ID or delivered as an official Google Play Redeem Code voucher!
+              {/* Glowing Available Winnings Hero Card */}
+              <div className="p-5 rounded-2xl bg-gradient-to-b from-emerald-950/40 via-[#0a0f18] to-[#070810] border border-emerald-500/40 text-center relative overflow-hidden shadow-2xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                    <Trophy className="w-4 h-4 text-emerald-400" />
+                    <span>Available Winning Balance</span>
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-mono font-bold uppercase">
+                    Min Withdrawal: ₹{adminSettings.minWithdrawal || 50}
+                  </span>
+                </div>
+
+                <div className="py-2">
+                  <div className="text-4xl sm:text-5xl font-black font-mono text-emerald-400 drop-shadow-[0_0_25px_rgba(16,185,129,0.5)]">
+                    ₹{profile?.winningsBalance ?? (profile as any)?.winning_balance ?? 0}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1.5">
+                    100% withdrawable pure earnings from tournament rank prizes & kill bounties.
                   </p>
+                </div>
+
+                {/* 0% TDS & Fee Notice Badge */}
+                <div className="mt-3 pt-3 border-t border-emerald-500/20 flex flex-wrap items-center justify-center gap-3 text-xs font-mono text-emerald-300 font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>0% TDS / Zero Withdrawal Fee</span>
+                  </span>
+                  <span className="hidden sm:inline text-emerald-600">•</span>
+                  <span className="flex items-center gap-1.5">
+                    <Zap className="w-4 h-4 text-emerald-400 fill-emerald-400" />
+                    <span>Disbursal in 5-15 Mins</span>
+                  </span>
                 </div>
               </div>
 
@@ -854,127 +965,239 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </div>
               )}
 
-              <form onSubmit={handleWithdrawalSubmit} className="space-y-5">
-                {/* Method Selector */}
+              <form onSubmit={handleWithdrawalSubmit} className="space-y-4">
+                {/* Method Selector Tabs: PhonePe | Google Pay | Paytm | Direct UPI */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                    Select Payout Method
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2 flex items-center justify-between">
+                    <span>Select Payout Gateway</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">100% Verified UPI</span>
                   </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setWithdrawMethod('upi')}
-                      className={`p-3.5 rounded-xl border flex items-center gap-3 transition-all cursor-pointer text-left ${
-                        withdrawMethod === 'upi'
-                          ? 'bg-emerald-500/10 border-emerald-500 text-white'
-                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                        <Smartphone className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold">Direct UPI Transfer</div>
-                        <div className="text-[10px] text-slate-400">GPay, PhonePe, Paytm VPA</div>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setWithdrawMethod('redeem_code')}
-                      className={`p-3.5 rounded-xl border flex items-center gap-3 transition-all cursor-pointer text-left ${
-                        withdrawMethod === 'redeem_code'
-                          ? 'bg-amber-500/10 border-amber-500 text-white'
-                          : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                        <Gift className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold">Google Play Code</div>
-                        <div className="text-[10px] text-slate-400">Instant Redeem Voucher</div>
-                      </div>
-                    </button>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {[
+                      { id: 'phonepe', label: 'PhonePe', sub: '@ybl / @ibl', color: 'from-purple-600 to-indigo-700', badge: 'POPULAR' },
+                      { id: 'gpay', label: 'Google Pay', sub: '@okhdfcbank', color: 'from-blue-600 to-cyan-600', badge: 'INSTANT' },
+                      { id: 'paytm', label: 'Paytm UPI', sub: '@paytm', color: 'from-sky-600 to-blue-700', badge: 'FAST' },
+                      { id: 'upi', label: 'Direct UPI', sub: 'Any Bank VPA', color: 'from-emerald-600 to-teal-700', badge: 'ALL APPS' },
+                    ].map((m) => {
+                      const isSelected = withdrawMethod === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setWithdrawMethod(m.id as any)}
+                          className={`p-3 rounded-xl border flex flex-col items-start gap-1 transition-all cursor-pointer text-left relative ${
+                            isSelected
+                              ? 'bg-gradient-to-b from-emerald-950/60 to-black border-emerald-500 text-white shadow-lg shadow-emerald-950/40'
+                              : 'bg-[#090b14] border-slate-800 text-slate-400 hover:border-slate-700 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="text-xs font-bold font-heading">{m.label}</span>
+                            <span className={`text-[9px] font-mono font-bold px-1.5 py-0.2 rounded ${
+                              isSelected ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                            }`}>
+                              {m.badge}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono">{m.sub}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Amount */}
+                {/* Amount with Quick Withdraw All Button */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5">
-                    Withdrawal Amount (₹)
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                      Withdrawal Amount (₹)
+                    </label>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      Available: ₹{profile?.winningsBalance ?? (profile as any)?.winning_balance ?? 0}
+                    </span>
+                  </div>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 font-mono text-sm">₹</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-base font-bold">₹</span>
                     <input
                       type="number"
                       required
                       min={adminSettings.minWithdrawal || 50}
-                      max={profile?.winningsBalance || 0}
-                      value={withdrawAmount}
+                      max={profile?.winningsBalance ?? (profile as any)?.winning_balance ?? 0}
+                      value={withdrawAmount || ''}
                       onChange={(e) => setWithdrawAmount(Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-full h-11 pl-8 pr-16 rounded-xl bg-slate-900 border border-slate-800 text-white text-sm font-mono focus:outline-none focus:border-emerald-500"
+                      placeholder={`Min ₹${adminSettings.minWithdrawal || 50}`}
+                      className="w-full h-12 pl-8 pr-24 rounded-xl bg-[#06070a] border border-red-950/80 text-white font-mono text-sm focus:outline-none focus:border-emerald-500 shadow-inner"
                     />
                     <button
                       type="button"
-                      onClick={() => setWithdrawAmount(profile?.winningsBalance || 0)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 text-[11px] font-bold text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 rounded-lg cursor-pointer"
+                      onClick={() => {
+                        const maxAmt = profile?.winningsBalance ?? (profile as any)?.winning_balance ?? 0;
+                        setWithdrawAmount(maxAmt);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-bold text-emerald-400 hover:text-emerald-300 bg-emerald-500/20 border border-emerald-500/30 rounded-lg cursor-pointer flex items-center gap-1 transition-all"
                     >
-                      MAX
+                      <span>Withdraw All</span>
                     </button>
                   </div>
                 </div>
 
-                {/* Conditional Inputs */}
-                {withdrawMethod === 'upi' ? (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Your UPI ID (VPA) <span className="text-emerald-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={withdrawUpiId}
-                      onChange={(e) => setWithdrawUpiId(e.target.value)}
-                      placeholder="e.g. 9876543210@paytm or gamer@okhdfcbank"
-                      required
-                      className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-emerald-500"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      Ensure your UPI ID is correct. Admin will disburse payout directly to this handle.
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">
-                      Enter Email for Redeem Code Delivery <span className="text-amber-400">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      value={deliveryEmail}
-                      onChange={(e) => setDeliveryEmail(e.target.value)}
-                      placeholder="your-email@gmail.com"
-                      required
-                      className="w-full h-11 px-3.5 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-amber-500"
-                    />
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      The official Google Play Redeem Code voucher will be generated and delivered to this email address once approved by Admin.
-                    </p>
-                  </div>
-                )}
+                {/* UPI ID Input */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    {withdrawMethod === 'phonepe'
+                      ? 'Enter PhonePe UPI ID'
+                      : withdrawMethod === 'gpay'
+                      ? 'Enter Google Pay UPI ID'
+                      : withdrawMethod === 'paytm'
+                      ? 'Enter Paytm UPI ID'
+                      : 'Enter UPI ID (VPA)'}{' '}
+                    <span className="text-emerald-400">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={withdrawUpiId}
+                    onChange={(e) => setWithdrawUpiId(e.target.value)}
+                    placeholder={
+                      withdrawMethod === 'phonepe'
+                        ? 'e.g. 9876543210@ybl or yourname@ibl'
+                        : withdrawMethod === 'gpay'
+                        ? 'e.g. yourname@okhdfcbank or yourname@okaxis'
+                        : withdrawMethod === 'paytm'
+                        ? 'e.g. 9876543210@paytm'
+                        : 'e.g. yourhandle@bankname'
+                    }
+                    required
+                    className="w-full h-12 px-3.5 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1 font-mono">
+                    Admin dispatches payout directly to this verified UPI address.
+                  </p>
+                </div>
 
+                {/* Confirm Phone Number */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Confirm 10-Digit Mobile Number <span className="text-emerald-400">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    maxLength={10}
+                    value={withdrawPhone}
+                    onChange={(e) => setWithdrawPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="e.g. 9876543210"
+                    required
+                    className="w-full h-12 px-3.5 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1 font-mono">
+                    Used for automated transaction SMS confirmation and instant WhatsApp support.
+                  </p>
+                </div>
+
+                {/* Submit Payout Request Button */}
                 <button
                   type="submit"
-                  disabled={withdrawSubmitting || (profile?.winningsBalance || 0) < (adminSettings.minWithdrawal || 50)}
-                  className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+                  disabled={
+                    withdrawSubmitting ||
+                    (profile?.winningsBalance ?? (profile as any)?.winning_balance ?? 0) <
+                      (adminSettings.minWithdrawal || 50) ||
+                    withdrawAmount < (adminSettings.minWithdrawal || 50)
+                  }
+                  className="w-full h-12 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-black font-black font-heading text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-emerald-500/20 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                 >
-                  <ArrowUpRight className="w-4 h-4" />
+                  <ArrowUpRight className="w-4 h-4 stroke-[2.5]" />
                   <span>
                     {withdrawSubmitting
-                      ? 'Processing Request...'
+                      ? 'Processing Payout Request...'
                       : `Request Payout of ₹${withdrawAmount}`}
                   </span>
                 </button>
               </form>
+            </div>
+          )}
+
+          {/* Popup Receipt Modal for Successful Withdrawal Request */}
+          {withdrawalReceipt && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/90 backdrop-blur-md">
+              <div className="w-full max-w-md bg-[#0a0c16] border border-emerald-500/50 rounded-2xl p-5 space-y-4 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between pb-3 border-b border-emerald-950/60">
+                  <div className="flex items-center gap-2 text-emerald-400">
+                    <CheckCircle2 className="w-5 h-5" />
+                    <span className="font-heading font-black text-sm uppercase text-white">
+                      Payout Request Submitted
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setWithdrawalReceipt(null)}
+                    className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-slate-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="text-center py-2">
+                  <span className="text-xs text-slate-400 uppercase font-mono block">Amount Disbursed</span>
+                  <div className="text-3xl font-black font-mono text-emerald-400 my-1">
+                    ₹{withdrawalReceipt.amount}
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold">
+                    STATUS: PENDING (5-15 MINS)
+                  </span>
+                </div>
+
+                <div className="space-y-2 rounded-xl bg-black/50 p-3.5 border border-slate-800 text-xs font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Transaction ID:</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-white font-bold">{withdrawalReceipt.transactionId}</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(withdrawalReceipt.transactionId);
+                          setReceiptCopied(true);
+                          setTimeout(() => setReceiptCopied(false), 2000);
+                        }}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+                      >
+                        {receiptCopied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Method:</span>
+                    <span className="text-slate-200">{withdrawalReceipt.method}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">UPI ID:</span>
+                    <span className="text-emerald-400 font-bold">{withdrawalReceipt.upiId}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Phone:</span>
+                    <span className="text-slate-200">{withdrawalReceipt.phone}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Est. Arrival:</span>
+                    <span className="text-amber-400 font-bold">5-15 Minutes</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <a
+                    href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full h-11 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                  >
+                    <Smartphone className="w-4 h-4 text-emerald-400" />
+                    <span>WhatsApp Support if Delayed</span>
+                  </a>
+
+                  <button
+                    onClick={() => setWithdrawalReceipt(null)}
+                    className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase transition-all cursor-pointer"
+                  >
+                    Done / Back to Arena
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

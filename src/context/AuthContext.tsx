@@ -117,11 +117,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // Attach realtime listener to user document
+  // Attach realtime listener to user document with non-blocking fallback
   const attachProfileListener = (uid: string, isWhitelistedAdmin: boolean): (() => void) => {
     const userRef = doc(db, 'users', uid);
+    let resolved = false;
+
+    // Inner 1.5s fallback so Firestore listener never blocks the UI
+    const profileTimer = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        setLoading(false);
+      }
+    }, 1500);
+
     return onSnapshot(
       userRef,
       (docSnap) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(profileTimer);
+        }
         if (docSnap.exists()) {
           const data = docSnap.data() as UserProfile;
           if (!data.referralCode) {
@@ -130,6 +145,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             data.referralCode = newRefCode;
           }
           setProfile(data);
+          try {
+            localStorage.setItem('cached_user_profile', JSON.stringify(data));
+          } catch {}
           if (!isWhitelistedAdmin && (!data.ign || !data.freeFireUid)) {
             setNeedsProfileSetup(true);
           } else {
@@ -139,6 +157,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setLoading(false);
       },
       (error) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(profileTimer);
+        }
         console.warn('Profile realtime listener warning:', error);
         setLoading(false);
       }
@@ -147,6 +169,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | null = null;
+    let authResolved = false;
+
+    // 2.5s Safety Fallback Timeout:
+    // If Firebase Auth or Firestore is slow, offline, or unresponsive,
+    // guarantee loading = false so the app NEVER freezes on the logo or splash screen.
+    const safetyTimer = setTimeout(() => {
+      if (!authResolved) {
+        authResolved = true;
+        console.warn('[AuthContext] 2.5s safety timeout reached: setting loading = false to render main UI/Login');
+        setLoading(false);
+      }
+    }, 2500);
+
+    // Try restoring cached profile for instant zero-latency UI paint
+    try {
+      const cachedProfileRaw = localStorage.getItem('cached_user_profile');
+      if (cachedProfileRaw) {
+        const cached = JSON.parse(cachedProfileRaw);
+        if (cached && cached.uid) {
+          setProfile(cached);
+        }
+      }
+    } catch {}
 
     // Check if there is an active local credentials session
     const savedSessionRaw = localStorage.getItem(SESSION_STORAGE_KEY);
@@ -176,6 +221,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             });
+            authResolved = true;
+            clearTimeout(safetyTimer);
             setLoading(false);
           } else {
             // Restore Gamer Session from Firestore
@@ -190,11 +237,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                     displayName: data.ign,
                   });
                   setProfile(data);
+                  try {
+                    localStorage.setItem('cached_user_profile', JSON.stringify(data));
+                  } catch {}
                   unsubscribeProfile = attachProfileListener(data.uid, false);
                 }
+                authResolved = true;
+                clearTimeout(safetyTimer);
                 setLoading(false);
               })
               .catch(() => {
+                authResolved = true;
+                clearTimeout(safetyTimer);
                 setLoading(false);
               });
           }
@@ -217,6 +271,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     // Listen to Firebase Auth state
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+      authResolved = true;
+      clearTimeout(safetyTimer);
+
       if (currentUser) {
         // Clear local credentials session if signing in with Google
         localStorage.setItem(
@@ -232,7 +289,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         );
         setIsAdmin(isWhitelisted);
 
-        // Realtime listener for User Profile
+        // Realtime listener for User Profile (with 1.5s inner safety timeout)
         unsubscribeProfile = attachProfileListener(currentUser.uid, isWhitelisted);
       } else {
         // Only reset if there was NO local credentials session
@@ -250,6 +307,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
 
     return () => {
+      clearTimeout(safetyTimer);
       unsubscribeAuth();
       if (unsubscribeProfile) {
         unsubscribeProfile();
