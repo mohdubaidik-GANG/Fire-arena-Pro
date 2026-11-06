@@ -568,74 +568,23 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     handleRupayexReturn();
   }, [user, profile]);
 
-  // Realtime Tournaments & Matches Listener (Clean deletion sync)
+  // Realtime Matches Listener (Single Source of Truth: 'matches')
   useEffect(() => {
-    const tourneysMap = new Map<string, Tournament>();
-    const matchesMap = new Map<string, Tournament>();
-
-    const updateState = () => {
-      const mergedMap = new Map<string, Tournament>();
-      tourneysMap.forEach((val, key) => mergedMap.set(key, val));
-      matchesMap.forEach((val, key) => {
-        const existing = mergedMap.get(key);
-        mergedMap.set(key, { ...existing, ...val });
-      });
-
-      const list = Array.from(mergedMap.values());
-      list.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-      setTournaments(list);
-      try {
-        localStorage.setItem('cached_tournaments', JSON.stringify(list));
-      } catch {}
-      setFetchingTournaments(false);
-    };
-
-    // Active tournaments query
-    const activeTournamentsQuery = query(
-      collection(db, 'tournaments'),
-      where('status', 'in', ['UPCOMING', 'OPEN', 'upcoming', 'open', 'live', 'LIVE']),
-      limit(25)
-    );
-
-    const unsubTournaments = onSnapshot(
-      activeTournamentsQuery,
-      (snapshot) => {
-        tourneysMap.clear();
-        snapshot.docs.forEach((docSnap) => {
-          const data = docSnap.data();
-          const joinedList = Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
-
-          tourneysMap.set(docSnap.id, {
-            id: docSnap.id,
-            ...data,
-            joinedPlayers: joinedList,
-            registeredCount: joinedList.length || Number(data.registeredCount) || 0,
-          } as Tournament);
-        });
-        updateState();
-      },
-      (error) => {
-        console.warn('Error fetching tournaments snapshot:', error);
-        setTournamentsError(error?.message || 'Temporary network connection issue.');
-        setFetchingTournaments(false);
-      }
-    );
-
     const activeMatchesQuery = query(
       collection(db, 'matches'),
       where('status', 'in', ['UPCOMING', 'OPEN', 'upcoming', 'open', 'live', 'LIVE']),
-      limit(25)
+      limit(50)
     );
 
     const unsubMatches = onSnapshot(
       activeMatchesQuery,
       (snapshot) => {
-        matchesMap.clear();
+        const list: Tournament[] = [];
         snapshot.docs.forEach((docSnap) => {
           const data = docSnap.data();
           const joinedList = Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
 
-          matchesMap.set(docSnap.id, {
+          list.push({
             id: docSnap.id,
             title: data.title || 'Free Fire Elite Match',
             category: data.category || 'FULL MAP',
@@ -659,15 +608,22 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             registeredCount: joinedList.length || Number(data.registeredCount) || 0,
           } as unknown as Tournament);
         });
-        updateState();
+
+        list.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+        setTournaments(list);
+        try {
+          localStorage.setItem('cached_tournaments', JSON.stringify(list));
+        } catch {}
+        setFetchingTournaments(false);
       },
       (error) => {
-        console.warn('Matches query note:', error);
+        console.warn('Matches query error:', error);
+        setTournamentsError(error?.message || 'Temporary network connection issue.');
+        setFetchingTournaments(false);
       }
     );
 
     return () => {
-      unsubTournaments();
       unsubMatches();
     };
   }, []);

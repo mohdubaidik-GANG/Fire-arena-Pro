@@ -195,48 +195,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // Real-time Listeners for all collections
   useEffect(() => {
-    // 1. Tournaments and Matches Listener (Unified with proper deletion sync)
-    const unsubTournaments = onSnapshot(
-      collection(db, 'tournaments'),
-      (snapshot) => {
-        tourneysMapRef.current.clear();
-        snapshot.docs.forEach((d) => {
-          const data = d.data();
-          const existing = tourneysMapRef.current.get(d.id);
-          const joinedList = Array.isArray(data.joinedPlayers) && data.joinedPlayers.length > 0
-            ? data.joinedPlayers
-            : Array.isArray(existing?.joinedPlayers) && existing.joinedPlayers.length > 0
-            ? existing.joinedPlayers
-            : Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
-
-          tourneysMapRef.current.set(d.id, {
-            id: d.id,
-            ...data,
-            joinedPlayers: joinedList,
-            registeredCount: joinedList.length || Number(data.registeredCount) || 0,
-          } as Tournament);
-        });
-        updateTournamentsState();
-      },
-      (error) => {
-        console.error('Error fetching tournaments:', error);
-      }
-    );
-
+    // 1. Matches Listener (Strictly single source of truth: 'matches')
     const unsubMatches = onSnapshot(
       collection(db, 'matches'),
       (snapshot) => {
-        matchesMapRef.current.clear();
+        const list: Tournament[] = [];
         snapshot.docs.forEach((d) => {
           const data = d.data();
-          const existing = matchesMapRef.current.get(d.id);
-          const joinedList = Array.isArray(data.joinedPlayers) && data.joinedPlayers.length > 0
-            ? data.joinedPlayers
-            : Array.isArray(existing?.joinedPlayers) && existing.joinedPlayers.length > 0
-            ? existing.joinedPlayers
-            : Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
+          const joinedList = Array.isArray(data.joinedPlayers) ? data.joinedPlayers : [];
 
-          matchesMapRef.current.set(d.id, {
+          list.push({
             id: d.id,
             title: data.title || 'Free Fire CS Match',
             category: data.category || 'battle_royale',
@@ -260,10 +228,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             registeredCount: joinedList.length || Number(data.registeredCount) || 0,
           } as unknown as Tournament);
         });
-        updateTournamentsState();
+
+        list.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setTournaments(list);
       },
       (error) => {
-        console.warn('Matches subscription note:', error);
+        console.warn('Matches subscription error:', error);
       }
     );
 
@@ -327,7 +297,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     );
 
     return () => {
-      unsubTournaments();
       unsubMatches();
       unsubDeposits();
       unsubWithdrawals();
@@ -521,7 +490,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // Direct Client-Side Match Deletion with Instant Optimistic UI Update
+  // Direct Client-Side Match Deletion with Instant Optimistic UI Update (Strictly Client SDK, Zero Fetch)
   const handleDeleteMatch = async (matchId: string, skipPrompt = false) => {
     let confirmed = skipPrompt;
     if (!confirmed) {
@@ -545,7 +514,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setTournaments((prev) => prev.filter((m) => m.id !== matchId));
     setMatchToDelete(null);
 
-    // Also remove from App cached_tournaments so it never reappears on reload
+    // Also purge from App cached_tournaments so it never reappears on reload
     try {
       const cached = localStorage.getItem('cached_tournaments');
       if (cached) {
@@ -558,19 +527,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } catch {}
 
     try {
-      // 2. Direct client-side deletion using Firebase SDK
-      const deletePromises = [
-        deleteDoc(doc(db, "matches", matchId)).catch(() => {}),
-        deleteDoc(doc(db, "tournaments", matchId)).catch(() => {})
-      ];
-      await Promise.allSettled(deletePromises);
-
-      // 3. Fallback server ping (fire-and-forget or safe check, never blocking UI)
-      fetch('/api/delete-match', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ matchId })
-      }).catch(() => {});
+      // 2. Pure direct client-side deletion using Firebase SDK without any fetch API
+      await Promise.allSettled([
+        deleteDoc(doc(db, "matches", matchId)),
+        deleteDoc(doc(db, "tournaments", matchId))
+      ]);
 
       showToast("Tournament match permanently deleted from database!", "success");
     } catch (err: unknown) {
@@ -587,13 +548,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       'bermuda rush',
       'cs clash',
       'purgatory survival',
-      'lone wolf 1v1',
+      'lone wolf',
       'kalahari sniper',
       'nexterra clash',
+      'stealth clash',
+      'grand championship',
+      'fast room',
+      'giveaway room',
+      'one-tap',
+      'free match',
+      'night mode',
+      'elite match',
+      'cs match'
     ];
 
     const targets = tournaments.filter((t) => {
-      const isZeroPlayers = t.registeredCount === 0 || !t.joinedPlayers || t.joinedPlayers.length === 0;
+      const isZeroPlayers = (t.registeredCount || 0) === 0 || !t.joinedPlayers || t.joinedPlayers.length === 0;
       const titleLower = (t.title || '').toLowerCase();
       const isDummyTitle = dummyTitles.some((dummy) => titleLower.includes(dummy));
       return isZeroPlayers || isDummyTitle;
@@ -638,18 +608,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } catch {}
 
     try {
-      // 2. Direct client-side deletion for each match
+      // 2. Direct client-side deletion for each match (Strictly Client SDK, Zero Fetch)
       for (const t of targets) {
         await Promise.allSettled([
-          deleteDoc(doc(db, 'matches', t.id)).catch(() => {}),
-          deleteDoc(doc(db, 'tournaments', t.id)).catch(() => {})
+          deleteDoc(doc(db, 'matches', t.id)),
+          deleteDoc(doc(db, 'tournaments', t.id))
         ]);
-
-        fetch('/api/delete-match', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ matchId: t.id })
-        }).catch(() => {});
       }
 
       showToast(`Successfully deleted ${targets.length} empty & auto-created dummy matches!`, 'success');
