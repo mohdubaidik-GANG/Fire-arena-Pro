@@ -194,6 +194,14 @@
       "schema": "appNotification",
       "description": "User specific alerts and room credential deliveries"
     },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": "transaction",
+      "description": "User specific wallet ledger and deposit records"
+    },
+    "/deposit_orders/{orderId}": {
+      "schema": "transaction",
+      "description": "Gateway deposit orders tracking paid state to prevent duplicate credits"
+    },
     "/users/{userId}": {
       "schema": "userProfile",
       "description": "User profiles with wallet balances and gaming credentials"

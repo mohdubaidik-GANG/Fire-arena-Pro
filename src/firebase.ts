@@ -9,12 +9,23 @@ import {
   setPersistence,
   browserLocalPersistence,
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, enableIndexedDbPersistence, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+
+// Enable Firestore IndexedDB offline persistence for ultra-fast instant screen switches
+if (typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('Firestore persistence warning: multiple tabs open');
+    } else if (err.code === 'unimplemented') {
+      console.warn('Firestore persistence warning: browser does not support IndexedDB');
+    }
+  });
+}
 
 // Enforce browser local persistence across sessions
 setPersistence(auth, browserLocalPersistence).catch((error) => {

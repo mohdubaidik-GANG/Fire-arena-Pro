@@ -114,9 +114,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // State for match deletion modal and admin feedback toasts
   const [matchToDelete, setMatchToDelete] = useState<{ id: string; title?: string } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
-  const [adminToast, setAdminToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [cleaningMatches, setCleaningMatches] = useState<boolean>(false);
+  const [adminToast, setAdminToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setAdminToast({ message, type });
     setTimeout(() => {
       setAdminToast((curr) => (curr?.message === message ? null : curr));
@@ -565,6 +566,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // One-Click Bulk Cleanup: Delete Auto-Created & Empty Matches
+  const handleDeleteEmptyAndAutoMatches = async () => {
+    const dummyTitles = [
+      'bermuda rush',
+      'cs clash',
+      'purgatory survival',
+      'lone wolf 1v1',
+      'kalahari sniper',
+      'nexterra clash',
+    ];
+
+    const targets = tournaments.filter((t) => {
+      const isZeroPlayers = t.registeredCount === 0 || !t.joinedPlayers || t.joinedPlayers.length === 0;
+      const titleLower = (t.title || '').toLowerCase();
+      const isDummyTitle = dummyTitles.some((dummy) => titleLower.includes(dummy));
+      return isZeroPlayers || isDummyTitle;
+    });
+
+    if (targets.length === 0) {
+      showToast('No empty or auto-created dummy matches found in database.', 'info');
+      return;
+    }
+
+    try {
+      if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+        const confirmed = window.confirm(
+          `Found ${targets.length} empty or auto-created match(es).\n\nDo you want to permanently delete them all from the database?`
+        );
+        if (!confirmed) return;
+      }
+    } catch {
+      // In case window.confirm is restricted in iframe, proceed with cleanup
+    }
+
+    setCleaningMatches(true);
+    let deletedCount = 0;
+
+    try {
+      for (const t of targets) {
+        tourneysMapRef.current.delete(t.id);
+        matchesMapRef.current.delete(t.id);
+
+        try {
+          await deleteDoc(doc(db, 'matches', t.id));
+        } catch {}
+
+        try {
+          await deleteDoc(doc(db, 'tournaments', t.id));
+        } catch {}
+
+        deletedCount++;
+      }
+
+      setTournaments((prev) => prev.filter((m) => !targets.some((tgt) => tgt.id === m.id)));
+      showToast(`Successfully deleted ${deletedCount} empty & auto-created dummy matches!`, 'success');
+    } catch (err: unknown) {
+      console.error('Error cleaning empty matches:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`Failed to clean matches: ${msg}`, 'error');
+    } finally {
+      setCleaningMatches(false);
+      updateTournamentsState();
+    }
+  };
+
   // Quick 1-Click Status Management
   const handleSetMatchStatus = async (matchId: string, newStatus: 'UPCOMING' | 'LIVE' | 'COMPLETED') => {
     try {
@@ -789,13 +855,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 </p>
               </div>
 
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="h-10 px-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-red-950/50 transition-all cursor-pointer shrink-0 border border-red-500/40"
-              >
-                <PlusCircle className="w-4 h-4 stroke-[2.5]" />
-                <span>Create Match</span>
-              </button>
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <button
+                  type="button"
+                  onClick={handleDeleteEmptyAndAutoMatches}
+                  disabled={cleaningMatches}
+                  className="h-10 px-3.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 hover:text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 border border-rose-800/40 transition-all cursor-pointer disabled:opacity-50"
+                  title="One-click clean up all empty matches and dummy seeds"
+                >
+                  <Trash2 className={`w-4 h-4 text-rose-400 ${cleaningMatches ? 'animate-spin' : ''}`} />
+                  <span>{cleaningMatches ? 'Cleaning Matches...' : 'Delete Auto-Created/Empty Matches'}</span>
+                </button>
+
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="h-10 px-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-red-950/50 transition-all cursor-pointer shrink-0 border border-red-500/40"
+                >
+                  <PlusCircle className="w-4 h-4 stroke-[2.5]" />
+                  <span>Create Match</span>
+                </button>
+              </div>
             </div>
 
             {/* Category Filter Pills */}

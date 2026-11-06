@@ -23,9 +23,16 @@ import {
   ShieldCheck,
   Lock,
   Zap,
-  CreditCard
+  CreditCard,
+  RefreshCw,
+  Filter,
+  TrendingUp,
+  TrendingDown,
+  Search
 } from 'lucide-react';
-import { collection, query, where, addDoc, updateDoc, doc, onSnapshot } from 'firebase/firestore';
+import confetti from 'canvas-confetti';
+import { sound } from '../utils/audio';
+import { collection, query, where, addDoc, updateDoc, doc, onSnapshot, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { DepositRequest, WithdrawalRequest, AdminSettings } from '../types';
@@ -53,20 +60,32 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     upiName: 'Fire Arena Pro',
     qrCodeUrl: '',
     supportWhatsapp: 'https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC',
-    minDeposit: 100,
+    minDeposit: 20,
     minWithdrawal: 50,
     rules: 'Deposit is credited within 5-15 mins of UTR verification. Withdrawals processed 24/7.',
   });
 
-  // Deposit Form State (Flexible ₹1 to ₹10,000)
-  const [depositAmount, setDepositAmount] = useState<number>(100);
-  const [customAmount, setCustomAmount] = useState<string>('100');
+  // Deposit Form State (Flexible ₹20 to ₹10,000)
+  const [depositAmount, setDepositAmount] = useState<number>(50);
+  const [customAmount, setCustomAmount] = useState<string>('50');
   const [utrNumber, setUtrNumber] = useState<string>('');
   const [proofNote, setProofNote] = useState<string>('');
   const [screenshotData, setScreenshotData] = useState<string>('');
   const [depositSubmitting, setDepositSubmitting] = useState<boolean>(false);
   const [depositSuccessMsg, setDepositSuccessMsg] = useState<string | null>(null);
   const [depositError, setDepositError] = useState<string | null>(null);
+
+  // Rupayex Verification & Status Check State
+  const [pendingOrder, setPendingOrder] = useState<{ orderId: string; amount: number; createdAt: string } | null>(null);
+  const [verifyingOrderId, setVerifyingOrderId] = useState<string>('');
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
+  const [verifyResultMsg, setVerifyResultMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [showManualVerifyInput, setShowManualVerifyInput] = useState<boolean>(false);
+
+  // Passbook & Transaction History State
+  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAWAL' | 'MATCH_FEE' | 'PRIZE'>('ALL');
+  const [transactionsList, setTransactionsList] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState<boolean>(false);
 
   // Withdrawal Form State
   const [withdrawAmount, setWithdrawAmount] = useState<number>(100);
@@ -78,6 +97,22 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
 
   const [copiedUpi, setCopiedUpi] = useState<boolean>(false);
+
+  // Read pending Rupayex order from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('pending_rupayex_order');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.orderId) {
+          setPendingOrder(parsed);
+          setVerifyingOrderId(parsed.orderId);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [isOpen, activeTab]);
 
   useEffect(() => {
     if (user?.email && !deliveryEmail) {
@@ -119,6 +154,67 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     };
   }, [isOpen, user]);
 
+  // Load Passbook Transaction History (Deposits, Withdrawals, Match Fees, Prizes Won)
+  useEffect(() => {
+    if (!isOpen || !user) return;
+    setLoadingHistory(true);
+
+    const userTxnRef = collection(db, 'users', user.uid, 'transactions');
+    const unsubTxns = onSnapshot(
+      query(userTxnRef, limit(50)),
+      (snapshot) => {
+        const txns: any[] = [];
+        snapshot.forEach((docSnap) => {
+          txns.push({ id: docSnap.id, ...docSnap.data() });
+        });
+
+        // Also fetch user's withdrawal requests to merge into passbook
+        const withQuery = query(collection(db, 'withdrawalRequests'), where('userId', '==', user.uid), limit(25));
+        getDocs(withQuery)
+          .then((withSnap) => {
+            withSnap.forEach((wDoc) => {
+              const wData = wDoc.data();
+              // Check if already in list
+              if (!txns.some((t) => t.id === wDoc.id || t.orderId === wDoc.id)) {
+                txns.push({
+                  id: wDoc.id,
+                  type: 'WITHDRAWAL',
+                  amount: wData.amount,
+                  status: (wData.status || 'PENDING').toUpperCase(),
+                  method: wData.method || 'UPI',
+                  createdAt: wData.createdAt || new Date().toISOString(),
+                  orderId: wDoc.id,
+                  note: wData.payoutMethod || 'Withdrawal Payout'
+                });
+              }
+            });
+
+            // Sort descending by date
+            txns.sort((a, b) => {
+              const timeA = new Date(a.createdAt || a.timestamp || 0).getTime();
+              const timeB = new Date(b.createdAt || b.timestamp || 0).getTime();
+              return timeB - timeA;
+            });
+
+            setTransactionsList(txns);
+            setLoadingHistory(false);
+          })
+          .catch(() => {
+            setTransactionsList(txns);
+            setLoadingHistory(false);
+          });
+      },
+      (err) => {
+        console.warn('Passbook listener note:', err);
+        setLoadingHistory(false);
+      }
+    );
+
+    return () => {
+      unsubTxns();
+    };
+  }, [isOpen, user]);
+
   if (!isOpen) return null;
 
   const currentEffectiveDepositAmount = customAmount ? parseFloat(customAmount) || 0 : depositAmount;
@@ -140,16 +236,73 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setTimeout(() => setCopiedUpi(false), 2000);
   };
 
+  // Fallback / Instant Verification for Rupayex Payment
+  const handleCheckDepositStatus = async (orderIdToCheck?: string) => {
+    const targetOrderId = (orderIdToCheck || verifyingOrderId || pendingOrder?.orderId || '').trim();
+    if (!targetOrderId) {
+      setVerifyResultMsg({ type: 'error', text: 'Please enter or select a Transaction / Order ID.' });
+      return;
+    }
+
+    setIsVerifying(true);
+    setVerifyResultMsg(null);
+    try {
+      const res = await fetch('/api/rupayex/verify-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: targetOrderId,
+          userId: user?.uid,
+          amount: pendingOrder?.amount || currentEffectiveDepositAmount
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && (data.status === 'PAID' || data.status === 'SUCCESS' || data.status === 'COMPLETED')) {
+        sound.playCoin();
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+        localStorage.removeItem('pending_rupayex_order');
+        setPendingOrder(null);
+        setVerifyResultMsg({
+          type: 'success',
+          text: data.message || `Payment verified! ₹${data.amount || currentEffectiveDepositAmount} credited to your wallet.`
+        });
+      } else {
+        setVerifyResultMsg({
+          type: 'info',
+          text: data.message || `Order status: ${data.status || 'PENDING'}. If you just completed the payment, please allow up to 1-2 minutes for the bank network to confirm.`
+        });
+      }
+    } catch (err: any) {
+      setVerifyResultMsg({
+        type: 'error',
+        text: err.message || 'Unable to connect to verification server. Please try again.'
+      });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   // Rupayex Payment Gateway Order Creation & Immediate Redirect
   const handleProceedToPayRupayex = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    // Duplicate Transaction Guard: Disable immediately on first tap
+    if (depositSubmitting) return;
+    setDepositSubmitting(true);
+
     setDepositError(null);
     setDepositSuccessMsg(null);
 
     const amount = Number(currentEffectiveDepositAmount);
-    if (!amount || isNaN(amount) || amount < 100 || amount > 10000) {
-      const errorMsg = "Amount ₹100 se ₹10,000 ke beech hona chahiye!";
+    if (!amount || isNaN(amount) || amount < 20 || amount > 10000) {
+      const errorMsg = "Amount ₹20 se ₹10,000 ke beech hona chahiye!";
       setDepositError(errorMsg);
+      setDepositSubmitting(false);
       try {
         if (typeof window !== 'undefined' && typeof window.alert === 'function') {
           window.alert(errorMsg);
@@ -162,6 +315,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
     if (!user) {
       setDepositError('Please log in first to proceed with deposit.');
+      setDepositSubmitting(false);
       return;
     }
 
@@ -187,15 +341,17 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     };
 
     // Save pending transaction to localStorage for auto-crediting on redirect return
-    localStorage.setItem('pending_rupayex_order', JSON.stringify({
+    const pendingData = {
       orderId: order_id,
       amount: Number(amount),
       userId: currentUser.uid,
       userFfUid: currentUser.ffUid,
       createdAt: new Date().toISOString()
-    }));
+    };
+    localStorage.setItem('pending_rupayex_order', JSON.stringify(pendingData));
+    setPendingOrder(pendingData);
+    setVerifyingOrderId(order_id);
 
-    setDepositSubmitting(true);
     try {
       let data: any = null;
 
@@ -362,7 +518,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         <div className="flex items-center border-b border-red-950/60 bg-[#07070f] overflow-x-auto">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
+            className={`flex-1 min-w-[120px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
               activeTab === 'overview'
                 ? 'border-red-500 text-red-400 bg-red-950/20'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -374,7 +530,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
+            className={`flex-1 min-w-[120px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
               activeTab === 'deposit'
                 ? 'border-red-500 text-red-400 bg-red-950/20'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -386,7 +542,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`flex-1 min-w-[130px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
+            className={`flex-1 min-w-[120px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
               activeTab === 'withdraw'
                 ? 'border-red-500 text-red-400 bg-red-950/20'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -394,6 +550,18 @@ export const WalletModal: React.FC<WalletModalProps> = ({
           >
             <ArrowUpRight className="w-4 h-4" />
             <span>Redeem Coins</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`flex-1 min-w-[120px] py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer border-b-2 whitespace-nowrap ${
+              activeTab === 'history'
+                ? 'border-red-500 text-red-400 bg-red-950/20'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Receipt className="w-4 h-4" />
+            <span>Passbook / History</span>
           </button>
         </div>
 
@@ -451,19 +619,19 @@ export const WalletModal: React.FC<WalletModalProps> = ({
               {/* Amount Input & Quick Select Chips */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                  Deposit Amount (₹100 - ₹10,000)
+                  Deposit Amount (₹20 - ₹10,000)
                 </label>
                 <div className="relative mb-3">
                   <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-400 font-mono font-bold text-base">₹</span>
                   <input
                     type="number"
-                    placeholder="Enter custom amount (₹100 - ₹10,000)"
+                    placeholder="Enter custom amount (₹20 - ₹10,000)"
                     value={customAmount}
                     onChange={(e) => {
                       setCustomAmount(e.target.value);
                       setDepositError(null);
                     }}
-                    min={100}
+                    min={20}
                     max={10000}
                     className="w-full h-12 pl-8 pr-4 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-red-500 shadow-inner"
                   />
@@ -472,18 +640,21 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 {/* Quick Select Chips directly under the input box */}
                 <div>
                   <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
-                    <span>Quick Select Amount</span>
-                    <span className="text-[10px] text-slate-500 font-mono">Min ₹100 • Max ₹10,000</span>
+                    <span className="flex items-center gap-1.5 text-amber-400 font-bold">
+                      <Zap className="w-3.5 h-3.5 fill-amber-400" /> Fast Deposit Chips
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">Min ₹20 • Max ₹10,000</span>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-4 gap-2">
                     {[
-                      { label: '+₹100', value: 100 },
-                      { label: '+₹200', value: 200 },
-                      { label: '+₹500', value: 500 },
-                      { label: '+₹1,000', value: 1000 },
-                      { label: '+₹2,000', value: 2000 },
-                      { label: '+₹5,000', value: 5000 },
-                      { label: '+₹10,000', value: 10000 },
+                      { label: '₹20', value: 20 },
+                      { label: '₹50', value: 50 },
+                      { label: '₹100', value: 100 },
+                      { label: '₹200', value: 200 },
+                      { label: '₹500', value: 500 },
+                      { label: '₹1,000', value: 1000 },
+                      { label: '₹2,000', value: 2000 },
+                      { label: '₹5,000', value: 5000 },
                     ].map((chip) => {
                       const isSelected = currentEffectiveDepositAmount === chip.value;
                       return (
@@ -495,7 +666,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                             setDepositAmount(chip.value);
                             setDepositError(null);
                           }}
-                          className={`px-3.5 py-2 rounded-xl font-mono font-bold text-xs transition-all cursor-pointer border flex items-center justify-center ${
+                          className={`py-2 px-1 rounded-xl font-mono font-bold text-xs transition-all cursor-pointer border flex items-center justify-center ${
                             isSelected
                               ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white border-red-500 shadow-md shadow-red-950/60 scale-102'
                               : 'bg-[#06070a] border-red-950/70 text-slate-300 hover:border-red-800 hover:text-white'
@@ -542,20 +713,20 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </div>
                 </div>
 
-                {/* Main Action Button: Proceed to Pay */}
+                {/* Main Action Button: Proceed to Pay with Duplicate Transaction Guard */}
                 <button
                   type="button"
                   onClick={handleProceedToPayRupayex}
-                  disabled={depositSubmitting || currentEffectiveDepositAmount < 100 || currentEffectiveDepositAmount > 10000}
+                  disabled={depositSubmitting || currentEffectiveDepositAmount < 20 || currentEffectiveDepositAmount > 10000}
                   className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-red-950/80 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 border border-red-500/40"
                 >
                   <Lock className="w-4 h-4 text-white" />
                   <span>
                     {depositSubmitting
                       ? 'Connecting Gateway...'
-                      : currentEffectiveDepositAmount >= 100 && currentEffectiveDepositAmount <= 10000
+                      : currentEffectiveDepositAmount >= 20 && currentEffectiveDepositAmount <= 10000
                       ? `Proceed to Pay ₹${currentEffectiveDepositAmount}`
-                      : 'Enter Amount (₹100 - ₹10,000)'}
+                      : 'Enter Amount (₹20 - ₹10,000)'}
                   </span>
                   <ExternalLink className="w-3.5 h-3.5 text-white/80" />
                 </button>
@@ -563,6 +734,85 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <p className="text-[11px] text-center text-slate-500">
                   You will be securely redirected to Rupayex payment gateway. Complete payment using any UPI app and your wallet will be updated automatically.
                 </p>
+              </div>
+
+              {/* Fallback Payment Verification / Status Checker */}
+              <div className="p-4 rounded-2xl bg-[#090b14] border border-red-950/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
+                    <RefreshCw className={`w-4 h-4 text-amber-400 ${isVerifying ? 'animate-spin' : ''}`} />
+                    <span>Check Deposit Status / Verify</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualVerifyInput(!showManualVerifyInput)}
+                    className="text-[11px] text-red-400 hover:text-red-300 font-semibold cursor-pointer"
+                  >
+                    {showManualVerifyInput ? 'Hide Custom Input' : 'Enter Order ID Manually'}
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-slate-400">
+                  Payment kiya par coins add nahi huye? Instant bank verification chalaayein:
+                </p>
+
+                {pendingOrder && (
+                  <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between text-xs">
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase font-mono">Recent Order Pending</div>
+                      <div className="font-mono text-white font-bold">{pendingOrder.orderId} (₹{pendingOrder.amount})</div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isVerifying}
+                      onClick={() => handleCheckDepositStatus(pendingOrder.orderId)}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[11px] uppercase cursor-pointer disabled:opacity-50 flex items-center gap-1 shadow-md shadow-amber-500/20"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isVerifying ? 'animate-spin' : ''}`} />
+                      <span>{isVerifying ? 'Checking...' : 'Check Status'}</span>
+                    </button>
+                  </div>
+                )}
+
+                {showManualVerifyInput && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="e.g. TXN_1720000000000_uid"
+                      value={verifyingOrderId}
+                      onChange={(e) => setVerifyingOrderId(e.target.value)}
+                      className="flex-1 h-9 px-3 rounded-lg bg-black border border-red-950/70 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-red-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={isVerifying || !verifyingOrderId.trim()}
+                      onClick={() => handleCheckDepositStatus()}
+                      className="h-9 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase cursor-pointer disabled:opacity-50 flex items-center gap-1 shrink-0"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isVerifying ? 'animate-spin' : ''}`} />
+                      <span>{isVerifying ? 'Verifying...' : 'Verify'}</span>
+                    </button>
+                  </div>
+                )}
+
+                {verifyResultMsg && (
+                  <div
+                    className={`p-3 rounded-xl text-xs flex items-center gap-2 border ${
+                      verifyResultMsg.type === 'success'
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                        : verifyResultMsg.type === 'error'
+                        ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                        : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                    }`}
+                  >
+                    {verifyResultMsg.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    )}
+                    <span>{verifyResultMsg.text}</span>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -725,6 +975,215 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                   </span>
                 </button>
               </form>
+            </div>
+          )}
+
+          {activeTab === 'history' && (
+            /* =================== PASSBOOK & TRANSACTION HISTORY =================== */
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('overview')}
+                  className="inline-flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 font-semibold cursor-pointer w-fit"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Back to Wallet Overview</span>
+                </button>
+
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    Total Records: {transactionsList.length}
+                  </span>
+                </div>
+              </div>
+
+              {/* Filter Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar border-b border-red-950/40">
+                {[
+                  { id: 'ALL', label: 'All' },
+                  { id: 'DEPOSIT', label: 'Deposits' },
+                  { id: 'WITHDRAWAL', label: 'Withdrawals' },
+                  { id: 'MATCH_FEE', label: 'Match Fees' },
+                  { id: 'PRIZE', label: 'Prizes Won' },
+                ].map((pill) => {
+                  const isActive = historyFilter === pill.id;
+                  return (
+                    <button
+                      key={pill.id}
+                      type="button"
+                      onClick={() => setHistoryFilter(pill.id as any)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${
+                        isActive
+                          ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white border-red-500 shadow-md shadow-red-950/60'
+                          : 'bg-[#090b14] border-red-950/60 text-slate-400 hover:text-white hover:border-red-900/40'
+                      }`}
+                    >
+                      {pill.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Transactions List */}
+              {loadingHistory ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <RefreshCw className="w-6 h-6 animate-spin mx-auto text-red-500" />
+                  <p className="text-xs font-mono">Loading transaction passbook...</p>
+                </div>
+              ) : (
+                (() => {
+                  const filtered = transactionsList.filter((item) => {
+                    const type = String(item.type || '').toUpperCase();
+                    if (historyFilter === 'ALL') return true;
+                    if (historyFilter === 'DEPOSIT') return type === 'DEPOSIT';
+                    if (historyFilter === 'WITHDRAWAL') return type === 'WITHDRAWAL';
+                    if (historyFilter === 'MATCH_FEE') {
+                      return ['ENTRY_FEE', 'MATCH_JOIN', 'MATCH_FEE', 'FEE'].includes(type);
+                    }
+                    if (historyFilter === 'PRIZE') {
+                      return ['WINNINGS', 'PRIZE', 'KILL_REWARD', 'BONUS', 'REFERRAL_BONUS'].includes(type);
+                    }
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="py-12 px-4 text-center rounded-2xl bg-[#090a14] border border-red-950/60">
+                        <Receipt className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                        <p className="text-sm font-bold text-slate-300 uppercase tracking-wider">
+                          No Transactions in this Category
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1 mb-4">
+                          Your deposit, match join, prize earnings, and payout logs will appear here.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('deposit')}
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs font-bold uppercase"
+                        >
+                          Add Coins Now
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-2.5">
+                      {filtered.map((txn) => {
+                        const rawType = String(txn.type || '').toUpperCase();
+                        const isCredit = [
+                          'DEPOSIT',
+                          'WINNINGS',
+                          'PRIZE',
+                          'KILL_REWARD',
+                          'BONUS',
+                          'REFERRAL_BONUS'
+                        ].includes(rawType);
+                        const status = String(txn.status || 'COMPLETED').toUpperCase();
+                        const isSuccess = ['COMPLETED', 'PAID', 'SUCCESS', 'APPROVED'].includes(status);
+                        const isPending = ['PENDING', 'PROCESSING'].includes(status);
+
+                        const formattedDate = txn.createdAt || txn.timestamp
+                          ? new Date(txn.createdAt || txn.timestamp).toLocaleString('en-IN', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              hour12: true,
+                            })
+                          : 'Just Now';
+
+                        return (
+                          <div
+                            key={txn.id || txn.orderId}
+                            className="p-3.5 rounded-xl bg-gradient-to-r from-[#0d0e1b] to-[#070810] border border-red-950/70 flex items-center justify-between gap-3 hover:border-red-900/70 transition-all"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                                  rawType === 'DEPOSIT'
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                    : rawType === 'WITHDRAWAL'
+                                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                    : isCredit
+                                    ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20'
+                                    : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                }`}
+                              >
+                                {rawType === 'DEPOSIT' ? (
+                                  <ArrowDownCircle className="w-5 h-5" />
+                                ) : rawType === 'WITHDRAWAL' ? (
+                                  <ArrowUpRight className="w-5 h-5" />
+                                ) : isCredit ? (
+                                  <Trophy className="w-5 h-5" />
+                                ) : (
+                                  <Receipt className="w-5 h-5" />
+                                )}
+                              </div>
+
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-white uppercase tracking-wide">
+                                    {rawType === 'DEPOSIT'
+                                      ? 'Deposit / Add Coins'
+                                      : rawType === 'WITHDRAWAL'
+                                      ? 'Coins Withdrawal'
+                                      : rawType === 'REFERRAL_BONUS'
+                                      ? 'Referral Signup Bonus'
+                                      : rawType === 'KILL_REWARD'
+                                      ? 'Kill Bounty Reward'
+                                      : isCredit
+                                      ? 'Tournament Prize Won'
+                                      : 'Match Entry Fee'}
+                                  </span>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase border ${
+                                      isSuccess
+                                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                                        : isPending
+                                        ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                        : 'bg-rose-500/10 text-rose-400 border-rose-500/30'
+                                    }`}
+                                  >
+                                    {status}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-mono">
+                                  <span>{formattedDate}</span>
+                                  {txn.orderId && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-slate-500 truncate max-w-[140px] sm:max-w-[200px]">
+                                        {txn.orderId}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span
+                                className={`font-mono font-bold text-sm sm:text-base ${
+                                  isCredit ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
+                              >
+                                {isCredit ? '+' : '-'}₹{txn.amount || 0}
+                              </span>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                {txn.gateway || txn.method || (isCredit ? 'Credit' : 'Debit')}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()
+              )}
             </div>
           )}
         </div>

@@ -151,74 +151,113 @@ const handleRupayexWebhook = async (req: express.Request, res: express.Response)
     console.log('[Rupayex Webhook Received]:', req.body);
     const body = req.body || {};
 
-    const rawStatus = String(body.status || body.payment_status || body.order_status || '').toUpperCase();
-    const isSuccess = rawStatus === 'SUCCESS' || rawStatus === 'COMPLETED' || rawStatus === 'PAID';
+    // 1. Case-insensitively verify payment status
+    const rawStatus = String(body.status || body.payment_status || body.order_status || body.txn_status || '').toUpperCase();
+    const isSuccess = ['SUCCESS', 'TXN_SUCCESS', 'COMPLETED', 'PAID', 'TRUE'].includes(rawStatus);
 
-    const orderId = String(body.order_id || body.orderId || body.client_txn_id || '').trim();
-    const amount = Number(body.amount || body.order_amount || 0);
+    const orderId = String(body.order_id || body.orderId || body.client_txn_id || body.txn_id || '').trim();
+    const amount = Number(body.amount || body.order_amount || body.txn_amount || 0);
 
     if (!orderId) {
       console.warn('[Rupayex Webhook] Missing order_id in webhook payload');
-      return res.status(400).json({ status: 'error', message: 'Missing order_id' });
+      return res.status(200).json({ success: false, message: 'Missing order_id' });
     }
 
     if (!isSuccess) {
       console.log(`[Rupayex Webhook] Order ${orderId} received status: ${rawStatus}`);
-      return res.json({ status: 'ok', message: `Status ${rawStatus} acknowledged` });
+      return res.status(200).json({ success: true, message: `Status ${rawStatus} acknowledged` });
     }
 
     const firestoreBaseUrl = `https://firestore.googleapis.com/v1/projects/extreme-ripsaw-zxtlg/databases/ai-studio-firearenapro-f9430e16-49a6-42b6-8d93-473ca682eb98/documents`;
     const apiKey = 'AIzaSyCViuuf83lOW1Es1_9D5HR8rbhMNuBV7Lo';
 
-    // 1. Check if transaction has already been processed in Firestore
-    const checkTxnRes = await fetch(`${firestoreBaseUrl}/transactions/${orderId}?key=${apiKey}`);
-    if (checkTxnRes.ok) {
-      const existingTxn = await checkTxnRes.json();
-      if (existingTxn?.fields?.status?.stringValue === 'COMPLETED') {
-        console.log(`[Rupayex Webhook] Order ${orderId} already credited in Firestore.`);
-        return res.json({ status: 'ok', message: 'Already processed' });
+    // 2. Check if already marked PAID in deposit_orders (prevents double crediting)
+    const checkOrderRes = await fetch(`${firestoreBaseUrl}/deposit_orders/${orderId}?key=${apiKey}`);
+    if (checkOrderRes.ok) {
+      const orderDoc = await checkOrderRes.json();
+      if (orderDoc?.fields?.status?.stringValue === 'PAID') {
+        console.log(`[Rupayex Webhook] Order ${orderId} already marked PAID in deposit_orders.`);
+        return res.status(200).json({ success: true, message: "Balance updated successfully" });
       }
     }
 
-    // 2. Extract userId from payload or parse from orderId (TXN_{timestamp}_{userId})
-    let userId = String(body.userId || body.user_id || body.customer_id || '').trim();
+    // 3. Resolve user ID from payload, orderId, or deposit_orders
+    let userId = String(body.user_id || body.userId || body.customer_id || body.uid || '').trim();
     if (!userId && orderId.startsWith('TXN_')) {
       const parts = orderId.split('_');
       userId = parts.slice(2).join('_');
     }
+    if (!userId && checkOrderRes.ok) {
+      const orderDoc = await checkOrderRes.json().catch(() => null);
+      userId = orderDoc?.fields?.userId?.stringValue || '';
+    }
 
     if (!userId) {
       console.warn(`[Rupayex Webhook] Could not determine userId for order ${orderId}`);
-      return res.status(400).json({ status: 'error', message: 'Could not resolve user ID' });
+      return res.status(200).json({ success: false, message: 'Could not resolve user ID' });
     }
 
-    // 3. Fetch user document to update balance
-    const userDocRes = await fetch(`${firestoreBaseUrl}/users/${userId}?key=${apiKey}`);
-    let currentDeposit = 0;
-    let userEmail = '';
-    let userIgn = 'Player';
-    if (userDocRes.ok) {
-      const userData = await userDocRes.json();
-      currentDeposit = Number(userData?.fields?.depositBalance?.integerValue || userData?.fields?.depositBalance?.doubleValue || 0);
-      userEmail = userData?.fields?.email?.stringValue || '';
-      userIgn = userData?.fields?.ign?.stringValue || 'Player';
-    }
-
-    const newDepositBalance = currentDeposit + amount;
-
-    // 4. Update user's depositBalance in Firestore
-    await fetch(`${firestoreBaseUrl}/users/${userId}?updateMask.fieldPaths=depositBalance&updateMask.fieldPaths=updatedAt&key=${apiKey}`, {
+    // 4. Mark deposit_orders/{order_id} as PAID first (idempotency barrier)
+    await fetch(`${firestoreBaseUrl}/deposit_orders/${orderId}?key=${apiKey}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fields: {
-          depositBalance: { integerValue: String(newDepositBalance) },
+          orderId: { stringValue: orderId },
+          userId: { stringValue: userId },
+          amount: { integerValue: String(amount) },
+          status: { stringValue: 'PAID' },
+          gateway: { stringValue: 'RUPAYEX' },
           updatedAt: { stringValue: new Date().toISOString() }
         }
       })
     });
 
-    // 5. Mark transaction record in 'transactions' collection with status COMPLETED
+    // 5. Fetch current user document and increment both depositBalance and wallet_balance
+    const userDocRes = await fetch(`${firestoreBaseUrl}/users/${userId}?key=${apiKey}`);
+    let currentDeposit = 0;
+    let currentWallet = 0;
+    let userEmail = '';
+    let userIgn = 'Player';
+    if (userDocRes.ok) {
+      const userData = await userDocRes.json();
+      currentDeposit = Number(userData?.fields?.depositBalance?.integerValue || userData?.fields?.depositBalance?.doubleValue || 0);
+      currentWallet = Number(userData?.fields?.wallet_balance?.integerValue || userData?.fields?.wallet_balance?.doubleValue || currentDeposit);
+      userEmail = userData?.fields?.email?.stringValue || '';
+      userIgn = userData?.fields?.ign?.stringValue || 'Player';
+    }
+
+    const newDeposit = currentDeposit + amount;
+    const newWallet = currentWallet + amount;
+
+    await fetch(`${firestoreBaseUrl}/users/${userId}?updateMask.fieldPaths=depositBalance&updateMask.fieldPaths=wallet_balance&updateMask.fieldPaths=updatedAt&key=${apiKey}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          depositBalance: { integerValue: String(newDeposit) },
+          wallet_balance: { integerValue: String(newWallet) },
+          updatedAt: { stringValue: new Date().toISOString() }
+        }
+      })
+    });
+
+    // 6. Log transaction record in /users/{uid}/transactions
+    await fetch(`${firestoreBaseUrl}/users/${userId}/transactions/${orderId}?key=${apiKey}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          type: { stringValue: 'DEPOSIT' },
+          amount: { integerValue: String(amount) },
+          orderId: { stringValue: orderId },
+          status: { stringValue: 'SUCCESS' },
+          timestamp: { stringValue: new Date().toISOString() }
+        }
+      })
+    });
+
+    // 7. Mark /transactions/{orderId}
     await fetch(`${firestoreBaseUrl}/transactions/${orderId}?key=${apiKey}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -235,7 +274,7 @@ const handleRupayexWebhook = async (req: express.Request, res: express.Response)
       })
     });
 
-    // 6. Record in depositRequests & walletHistory for user transaction feed
+    // 8. Add to depositRequests feed
     await fetch(`${firestoreBaseUrl}/depositRequests?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -254,16 +293,178 @@ const handleRupayexWebhook = async (req: express.Request, res: express.Response)
       })
     });
 
+    // 9. Push in-app notification
+    await fetch(`${firestoreBaseUrl}/users/${userId}/notifications?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fields: {
+          title: { stringValue: '🪙 Instant Deposit Credited!' },
+          message: { stringValue: `₹${amount} has been successfully added to your wallet. Order ID: ${orderId}` },
+          category: { stringValue: 'WALLET' },
+          createdAt: { stringValue: new Date().toISOString() }
+        }
+      })
+    }).catch(() => {});
+
     console.log(`[Rupayex Webhook Success] Successfully credited ₹${amount} to user ${userId} for order ${orderId}`);
-    return res.json({ status: 'ok' });
+    return res.status(200).json({ success: true, message: "Balance updated successfully" });
   } catch (err: any) {
     console.error('[Rupayex Webhook Handler Error]:', err);
-    return res.status(500).json({ status: 'error', error: err.message });
+    return res.status(200).json({ success: false, error: err.message });
+  }
+};
+
+// Client-Side Verification Endpoint ("Check Payment Status" Fallback)
+const handleVerifyPayment = async (req: express.Request, res: express.Response) => {
+  try {
+    const body = req.body || {};
+    const query = (req.query as any) || {};
+    const finalOrderId = String(body.order_id || body.orderId || query.order_id || query.orderId || '').trim();
+    const userId = String(body.userId || body.user_id || query.userId || query.user_id || '').trim();
+    const reqAmount = Number(body.amount || query.amount || 0);
+
+    if (!finalOrderId) {
+      return res.status(400).json({ success: false, message: 'Missing order ID to verify' });
+    }
+
+    const firestoreBaseUrl = `https://firestore.googleapis.com/v1/projects/extreme-ripsaw-zxtlg/databases/ai-studio-firearenapro-f9430e16-49a6-42b6-8d93-473ca682eb98/documents`;
+    const apiKey = 'AIzaSyCViuuf83lOW1Es1_9D5HR8rbhMNuBV7Lo';
+
+    // 1. Check if already marked PAID in deposit_orders
+    const checkOrderRes = await fetch(`${firestoreBaseUrl}/deposit_orders/${finalOrderId}?key=${apiKey}`);
+    if (checkOrderRes.ok) {
+      const orderDoc = await checkOrderRes.json();
+      if (orderDoc?.fields?.status?.stringValue === 'PAID') {
+        const amt = Number(orderDoc?.fields?.amount?.integerValue || reqAmount || 0);
+        return res.json({ success: true, status: 'PAID', amount: amt, message: 'Deposit verified and already credited.' });
+      }
+    }
+
+    // 2. Query Rupayex Gateway Status API directly
+    let gatewayData: any = null;
+    try {
+      const rupayexCheckRes = await fetch('https://rupayex.net/api/check-order-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          user_token: "2cbda25b49468fe8b5b65d535531fe0d",
+          order_id: finalOrderId
+        })
+      });
+      gatewayData = await rupayexCheckRes.json().catch(() => null);
+      console.log('[Rupayex Status Check API Response]:', gatewayData);
+    } catch (gErr) {
+      console.warn('Rupayex status check gateway call failed:', gErr);
+    }
+
+    const rawStatus = String(gatewayData?.status || gatewayData?.data?.status || gatewayData?.payment_status || '').toUpperCase();
+    const isPaid = ['SUCCESS', 'TXN_SUCCESS', 'COMPLETED', 'PAID', 'TRUE'].includes(rawStatus);
+
+    if (isPaid) {
+      const creditAmount = Number(gatewayData?.amount || gatewayData?.data?.amount || reqAmount || 0);
+      let targetUserId = String(userId || gatewayData?.user_id || '').trim();
+      if (!targetUserId && finalOrderId.startsWith('TXN_')) {
+        const parts = finalOrderId.split('_');
+        targetUserId = parts.slice(2).join('_');
+      }
+
+      // Mark deposit_orders as PAID
+      await fetch(`${firestoreBaseUrl}/deposit_orders/${finalOrderId}?key=${apiKey}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fields: {
+            orderId: { stringValue: finalOrderId },
+            userId: { stringValue: targetUserId },
+            amount: { integerValue: String(creditAmount) },
+            status: { stringValue: 'PAID' },
+            gateway: { stringValue: 'RUPAYEX' },
+            updatedAt: { stringValue: new Date().toISOString() }
+          }
+        })
+      });
+
+      // Update user wallet balance
+      if (targetUserId) {
+        const userRes = await fetch(`${firestoreBaseUrl}/users/${targetUserId}?key=${apiKey}`);
+        let curDeposit = 0;
+        let curWallet = 0;
+        if (userRes.ok) {
+          const uData = await userRes.json();
+          curDeposit = Number(uData?.fields?.depositBalance?.integerValue || 0);
+          curWallet = Number(uData?.fields?.wallet_balance?.integerValue || curDeposit);
+        }
+
+        await fetch(`${firestoreBaseUrl}/users/${targetUserId}?updateMask.fieldPaths=depositBalance&updateMask.fieldPaths=wallet_balance&updateMask.fieldPaths=updatedAt&key=${apiKey}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              depositBalance: { integerValue: String(curDeposit + creditAmount) },
+              wallet_balance: { integerValue: String(curWallet + creditAmount) },
+              updatedAt: { stringValue: new Date().toISOString() }
+            }
+          })
+        });
+
+        // Add transaction log
+        await fetch(`${firestoreBaseUrl}/users/${targetUserId}/transactions/${finalOrderId}?key=${apiKey}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              type: { stringValue: 'DEPOSIT' },
+              amount: { integerValue: String(creditAmount) },
+              orderId: { stringValue: finalOrderId },
+              status: { stringValue: 'SUCCESS' },
+              timestamp: { stringValue: new Date().toISOString() }
+            }
+          })
+        });
+
+        await fetch(`${firestoreBaseUrl}/transactions/${finalOrderId}?key=${apiKey}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fields: {
+              orderId: { stringValue: finalOrderId },
+              userId: { stringValue: targetUserId },
+              amount: { integerValue: String(creditAmount) },
+              status: { stringValue: 'COMPLETED' },
+              type: { stringValue: 'DEPOSIT' },
+              gateway: { stringValue: 'RUPAYEX' },
+              createdAt: { stringValue: new Date().toISOString() }
+            }
+          })
+        });
+      }
+
+      return res.json({
+        success: true,
+        status: 'PAID',
+        amount: creditAmount,
+        message: `Payment verified! ₹${creditAmount} has been credited to your wallet.`
+      });
+    }
+
+    return res.json({
+      success: false,
+      status: rawStatus || 'PENDING',
+      message: 'Payment has not been confirmed by the bank yet. Please wait a few seconds and tap again.'
+    });
+  } catch (err: any) {
+    console.error('[Verify Payment Error]:', err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 };
 
 app.post('/api/rupayex-webhook', handleRupayexWebhook);
 app.post('/api/rupayex/webhook', handleRupayexWebhook);
+app.post('/api/rupayex/verify-order', handleVerifyPayment);
+app.get('/api/rupayex/verify-order', handleVerifyPayment);
+app.post('/api/verify-payment', handleVerifyPayment);
+app.get('/api/verify-payment', handleVerifyPayment);
 
 async function startServer() {
   const publicPath = path.resolve(process.cwd(), 'public');

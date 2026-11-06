@@ -38,7 +38,7 @@ import {
   Receipt,
   XCircle
 } from 'lucide-react';
-import { collection, query, onSnapshot, getDocs, getDoc, setDoc, doc, addDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, query, where, limit, onSnapshot, getDocs, getDoc, setDoc, doc, addDoc, updateDoc, increment } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
 import { db } from './firebase';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -387,15 +387,27 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
         console.log(`[Rupayex Auto-Credit] Crediting ₹${amount} to user ${user.uid} for order ${orderId}`);
 
-        // 2. Update Firestore user document: increment depositBalance
+        // 2. Update Firestore user document: increment depositBalance and wallet_balance
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, {
           depositBalance: increment(Number(amount)),
+          wallet_balance: increment(Number(amount)),
           updatedAt: new Date().toISOString()
         });
 
-        // 3. Mark transaction record in 'transactions' collection
+        // 3. Mark transaction record in 'transactions' collection & 'deposit_orders'
         await setDoc(doc(db, 'transactions', orderId), {
+          userId: user.uid,
+          amount: Number(amount),
+          orderId: orderId,
+          status: 'COMPLETED',
+          type: 'DEPOSIT',
+          gateway: 'RUPAYEX',
+          createdAt: new Date().toISOString()
+        });
+
+        // Also record in users/{uid}/transactions
+        await setDoc(doc(db, 'users', user.uid, 'transactions', orderId), {
           userId: user.uid,
           amount: Number(amount),
           orderId: orderId,
@@ -427,13 +439,14 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
 
         await addDoc(collection(db, 'walletHistory'), txnRecord);
 
-        // 5. Update UI states, open wallet, and celebrate
+        // 5. Update UI states, open wallet, and celebrate with coin sound & confetti
         setActiveTab('wallet');
         setPaymentSuccessBanner({ amount, orderId });
         setPaymentSuccessPopup({ amount, orderId });
         localStorage.removeItem('pending_rupayex_order');
 
         try {
+          sound.playCoin();
           confetti({
             particleCount: 120,
             spread: 80,
@@ -466,12 +479,19 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       setFetchingTournaments(false);
     };
 
-    const unsubTournaments = onSnapshot(
+    // Optimized active tournaments query limited to 15 matches (zero lag & fast initial render)
+    const activeTournamentsQuery = query(
       collection(db, 'tournaments'),
-      async (snapshot) => {
+      where('status', 'in', ['UPCOMING', 'OPEN', 'upcoming', 'open', 'live', 'LIVE']),
+      limit(15)
+    );
+
+    const unsubTournaments = onSnapshot(
+      activeTournamentsQuery,
+      (snapshot) => {
         if (snapshot.empty && tourneyMap.size === 0) {
-          await seedDefaultTournaments();
           setFetchingTournaments(false);
+          updateState();
         } else {
           snapshot.docs.forEach((docSnap) => {
             const data = docSnap.data();
@@ -498,8 +518,14 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       }
     );
 
-    const unsubMatches = onSnapshot(
+    const activeMatchesQuery = query(
       collection(db, 'matches'),
+      where('status', 'in', ['UPCOMING', 'OPEN', 'upcoming', 'open', 'live', 'LIVE']),
+      limit(15)
+    );
+
+    const unsubMatches = onSnapshot(
+      activeMatchesQuery,
       (snapshot) => {
         snapshot.docs.forEach((docSnap) => {
           const data = docSnap.data();
@@ -600,141 +626,6 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       unsubs.forEach((u) => u());
     };
   }, [user, tournaments, profile]);
-
-  // Seed default tournaments for Fire Arena Pro modes if empty
-  const seedDefaultTournaments = async () => {
-    const defaultList: Omit<Tournament, 'id'>[] = [
-      {
-        title: 'FULL MAP Bermuda Grand Championship',
-        category: 'FULL MAP',
-        mode: 'Solo',
-        map: 'Bermuda',
-        entryFee: 30,
-        totalPrizePool: 1200,
-        perKillReward: 15,
-        rank1Prize: 400,
-        rank2Prize: 200,
-        rank3Prize: 100,
-        maxSlots: 48,
-        registeredCount: 38,
-        startTime: new Date(Date.now() + 35 * 60 * 1000).toISOString(),
-        status: 'upcoming',
-        roomId: '',
-        roomPassword: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        title: 'CS HEAD Instant One-Tap Desert Eagle War',
-        category: 'CS HEAD',
-        mode: 'Solo',
-        map: 'Bermuda Remastered',
-        entryFee: 20,
-        totalPrizePool: 35,
-        perKillReward: 0,
-        rank1Prize: 35,
-        rank2Prize: 0,
-        rank3Prize: 0,
-        maxSlots: 2,
-        registeredCount: 1,
-        startTime: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-        status: 'upcoming',
-        roomId: '',
-        roomPassword: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        title: 'LW 1V1 Lone Wolf High Stakes Duel',
-        category: 'LW 1V1',
-        mode: 'Solo',
-        map: 'Iron Cage',
-        entryFee: 50,
-        totalPrizePool: 90,
-        perKillReward: 0,
-        rank1Prize: 90,
-        rank2Prize: 0,
-        rank3Prize: 0,
-        maxSlots: 2,
-        registeredCount: 1,
-        startTime: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
-        status: 'upcoming',
-        roomId: '',
-        roomPassword: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        title: 'LW ₹10 Budget Lone Wolf Fast Room',
-        category: 'LW ₹10',
-        mode: 'Solo',
-        map: 'Iron Cage',
-        entryFee: 10,
-        totalPrizePool: 18,
-        perKillReward: 0,
-        rank1Prize: 18,
-        rank2Prize: 0,
-        rank3Prize: 0,
-        maxSlots: 2,
-        registeredCount: 0,
-        startTime: new Date(Date.now() + 50 * 60 * 1000).toISOString(),
-        status: 'upcoming',
-        roomId: '',
-        roomPassword: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        title: 'NIGHT MODE Bermuda Midnight Stealth Clash',
-        category: 'NIGHT MODE',
-        mode: 'Solo',
-        map: 'Bermuda Night',
-        entryFee: 25,
-        totalPrizePool: 1000,
-        perKillReward: 12,
-        rank1Prize: 350,
-        rank2Prize: 150,
-        rank3Prize: 50,
-        maxSlots: 48,
-        registeredCount: 22,
-        startTime: new Date(Date.now() + 75 * 60 * 1000).toISOString(),
-        status: 'upcoming',
-        roomId: '',
-        roomPassword: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        title: '100% FREE MATCH Daily Giveaway Room',
-        category: 'FREE MATCH',
-        mode: 'Solo',
-        map: 'Kalahari',
-        entryFee: 0,
-        totalPrizePool: 150,
-        perKillReward: 2,
-        rank1Prize: 50,
-        rank2Prize: 20,
-        rank3Prize: 10,
-        maxSlots: 48,
-        registeredCount: 42,
-        startTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-        status: 'upcoming',
-        roomId: '',
-        roomPassword: '',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      }
-    ];
-
-    try {
-      for (const t of defaultList) {
-        await addDoc(collection(db, 'matches'), t);
-        await addDoc(collection(db, 'tournaments'), t);
-      }
-    } catch (e) {
-      console.warn('Auto-seed completed or skipped');
-    }
-  };
 
   const handleOpenWallet = (tab: 'overview' | 'deposit' | 'withdraw' | 'history' = 'overview') => {
     setWalletInitialTab(tab);

@@ -36,6 +36,12 @@ service cloud.firestore {
         allow get, list: if true;
         allow create, update, delete: if true;
       }
+
+      match /transactions/{transactionId} {
+        allow get, list: if true;
+        allow create, update: if true;
+        allow delete: if isAdmin();
+      }
     }
 
     // Broadcast Notifications (Global announcements & alerts)
@@ -44,10 +50,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Tournaments Collection
+    // Tournaments Collection (Only Admin can create/delete; players can update for slot joins)
     match /tournaments/{tournamentId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create, delete: if isAdmin();
+      allow update: if true;
 
       match /registrations/{registrationId} {
         allow get, list: if true;
@@ -55,10 +62,17 @@ service cloud.firestore {
       }
     }
 
-    // Matches Collection
+    // Matches Collection (Strictly only Admin can create/delete matches)
     match /matches/{matchId} {
       allow get, list: if true;
-      allow create, update, delete: if true;
+      allow create, delete: if isAdmin();
+      allow update: if true;
+    }
+
+    // Deposit Orders Collection (Rupayex double-credit prevention)
+    match /deposit_orders/{orderId} {
+      allow get, list, create, update: if true;
+      allow delete: if isAdmin();
     }
 
     // Transactions Collection (Rupayex Auto-Credit & Instant Ledger)
