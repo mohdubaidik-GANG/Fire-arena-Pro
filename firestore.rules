@@ -66,13 +66,13 @@ service cloud.firestore {
       allow write, delete: if request.auth != null;
     }
 
-    // Deposit Orders Collection (Rupayex double-credit prevention)
+    // Deposit Orders Collection (Direct UPI Orders)
     match /deposit_orders/{orderId} {
       allow get, list, create, update: if true;
       allow delete: if isAdmin();
     }
 
-    // Transactions Collection (Rupayex Auto-Credit & Instant Ledger)
+    // Transactions Collection (Direct Ledger & Passbook)
     match /transactions/{transactionId} {
       allow get, list, create, update: if true;
       allow delete: if isAdmin();
@@ -90,7 +90,7 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Wallet History (Rupayex & Payout records)
+    // Wallet History (UPI & Payout records)
     match /walletHistory/{historyId} {
       allow get, list, create: if true;
       allow update, delete: if isAdmin();

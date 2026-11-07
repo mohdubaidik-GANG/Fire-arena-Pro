@@ -119,8 +119,9 @@ export interface DepositRequest {
   utrNumber?: string; // 12-digit UPI reference number
   orderId?: string;
   gateway?: string;
+  screenshotUrl?: string; // payment proof image data URL or URL
   proofUrl?: string; // payment screenshot or receipt note
-  status: 'pending' | 'approved' | 'rejected' | 'COMPLETED';
+  status: 'pending' | 'approved' | 'rejected' | 'COMPLETED' | 'PENDING';
   adminNote?: string;
   createdAt: string;
   reviewedAt?: string;

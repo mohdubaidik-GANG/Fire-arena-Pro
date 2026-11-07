@@ -28,11 +28,13 @@ import {
   Filter,
   TrendingUp,
   TrendingDown,
-  Search
+  Search,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { sound } from '../utils/audio';
-import { collection, query, where, addDoc, updateDoc, doc, onSnapshot, getDocs, orderBy, limit, runTransaction, setDoc } from 'firebase/firestore';
+import { collection, query, where, addDoc, updateDoc, doc, onSnapshot, getDocs, orderBy, limit, runTransaction, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { DepositRequest, WithdrawalRequest, AdminSettings } from '../types';
@@ -76,13 +78,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   const [depositError, setDepositError] = useState<string | null>(null);
   const [copiedUpi, setCopiedUpi] = useState<boolean>(false);
 
-  // Rupayex Verification & Status Check State
-  const [pendingOrder, setPendingOrder] = useState<{ orderId: string; amount: number; createdAt: string } | null>(null);
-  const [verifyingOrderId, setVerifyingOrderId] = useState<string>('');
-  const [isVerifying, setIsVerifying] = useState<boolean>(false);
-  const [verifyResultMsg, setVerifyResultMsg] = useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
-  const [showManualVerifyInput, setShowManualVerifyInput] = useState<boolean>(false);
-
   // Passbook & Transaction History State
   const [historyFilter, setHistoryFilter] = useState<'ALL' | 'DEPOSIT' | 'WITHDRAWAL' | 'MATCH_FEE' | 'PRIZE'>('ALL');
   const [transactionsList, setTransactionsList] = useState<any[]>([]);
@@ -114,21 +109,6 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     }
   }, [profile?.phone]);
 
-  // Read pending Rupayex order from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('pending_rupayex_order');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed?.orderId) {
-          setPendingOrder(parsed);
-          setVerifyingOrderId(parsed.orderId);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, [isOpen, activeTab]);
 
   useEffect(() => {
     if (user?.email && !deliveryEmail) {
@@ -252,167 +232,106 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setTimeout(() => setCopiedUpi(false), 2000);
   };
 
-  // Fallback / Instant Verification for Rupayex Payment
-  const handleCheckDepositStatus = async (orderIdToCheck?: string) => {
-    const targetOrderId = (orderIdToCheck || verifyingOrderId || pendingOrder?.orderId || '').trim();
-    if (!targetOrderId) {
-      setVerifyResultMsg({ type: 'error', text: 'Please enter or select a Transaction / Order ID.' });
+  // Handle screenshot upload as base64 DataURL
+  const handleScreenshotChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setDepositError('Screenshot file size must be under 5MB.');
       return;
     }
 
-    setIsVerifying(true);
-    setVerifyResultMsg(null);
-    try {
-      const res = await fetch('/api/rupayex/verify-order', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          order_id: targetOrderId,
-          userId: user?.uid,
-          amount: pendingOrder?.amount || currentEffectiveDepositAmount
-        })
-      });
-
-      const data = await res.json();
-      if (data.success && (data.status === 'PAID' || data.status === 'SUCCESS' || data.status === 'COMPLETED')) {
-        sound.playCoin();
-        confetti({
-          particleCount: 80,
-          spread: 70,
-          origin: { y: 0.6 }
-        });
-        localStorage.removeItem('pending_rupayex_order');
-        setPendingOrder(null);
-        setVerifyResultMsg({
-          type: 'success',
-          text: data.message || `Payment verified! ₹${data.amount || currentEffectiveDepositAmount} credited to your wallet.`
-        });
-      } else {
-        setVerifyResultMsg({
-          type: 'info',
-          text: data.message || `Order status: ${data.status || 'PENDING'}. If you just completed the payment, please allow up to 1-2 minutes for the bank network to confirm.`
-        });
-      }
-    } catch (err: any) {
-      setVerifyResultMsg({
-        type: 'error',
-        text: err.message || 'Unable to connect to verification server. Please try again.'
-      });
-    } finally {
-      setIsVerifying(false);
-    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setScreenshotData(reader.result as string);
+      setDepositError(null);
+    };
+    reader.onerror = () => {
+      setDepositError('Failed to read image file. Please try another image.');
+    };
+    reader.readAsDataURL(file);
   };
 
-  // Rupayex Payment Gateway Order Creation & Immediate Redirect
-  const handleProceedToPayRupayex = async (e?: React.FormEvent) => {
+  // Submit Payment Proof to Firestore depositRequests
+  const handleDepositSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
-    // Duplicate Transaction Guard: Disable immediately on first tap
     if (depositSubmitting) return;
-    setDepositSubmitting(true);
 
     setDepositError(null);
     setDepositSuccessMsg(null);
 
     const amount = Number(currentEffectiveDepositAmount);
     if (!amount || isNaN(amount) || amount < 20 || amount > 10000) {
-      const errorMsg = "Amount ₹20 se ₹10,000 ke beech hona chahiye!";
-      setDepositError(errorMsg);
-      setDepositSubmitting(false);
-      try {
-        if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-          window.alert(errorMsg);
-        }
-      } catch {
-        // If iframe suppresses alert, UI banner displays errorMsg
-      }
+      setDepositError('Amount must be between ₹20 and ₹10,000.');
       return;
     }
 
     if (!user) {
-      setDepositError('Please log in first to proceed with deposit.');
-      setDepositSubmitting(false);
+      setDepositError('Please log in first to submit deposit proof.');
       return;
     }
 
-    const currentUser = {
-      uid: user.uid,
-      ffUid: profile?.freeFireUid || user.uid || '10000000',
-      ign: profile?.ign || (user as any).displayName || 'Player',
-      phone: profile?.phone || '9999999999',
-      email: user.email || '',
-    };
+    const trimmedUtr = utrNumber.trim();
+    if (!trimmedUtr) {
+      setDepositError('Please enter the 12-digit UTR / UPI Transaction Reference Number.');
+      return;
+    }
 
-    const order_id = `TXN_${Date.now()}_${currentUser.uid}`;
-    const redirect_url = `${window.location.origin}/wallet?payment=success&order_id=${order_id}&amount=${amount}`;
+    if (trimmedUtr.length < 6) {
+      setDepositError('Please enter a valid UTR / Transaction ID (minimum 6 digits).');
+      return;
+    }
 
-    const orderPayload = {
-      user_token: "2cbda25b49468fe8b5b65d535531fe0d",
-      instance_id: "I9dwytvqic1793850117",
-      amount: Number(amount),
-      order_id: order_id,
-      customer_name: currentUser.ign || "Player",
-      customer_mobile: currentUser.phone || "9999999999",
-      redirect_url: redirect_url,
-    };
-
-    // Save pending transaction to localStorage for auto-crediting on redirect return
-    const pendingData = {
-      orderId: order_id,
-      amount: Number(amount),
-      userId: currentUser.uid,
-      userFfUid: currentUser.ffUid,
-      createdAt: new Date().toISOString()
-    };
-    localStorage.setItem('pending_rupayex_order', JSON.stringify(pendingData));
-    setPendingOrder(pendingData);
-    setVerifyingOrderId(order_id);
+    setDepositSubmitting(true);
 
     try {
-      let data: any = null;
+      // 1. Save to Firestore depositRequests collection
+      await addDoc(collection(db, 'depositRequests'), {
+        userId: user.uid,
+        userEmail: user.email || '',
+        userIgn: profile?.ign || (user as any).displayName || 'Player',
+        userFfUid: profile?.freeFireUid || '',
+        amount: Number(amount),
+        utrNumber: trimmedUtr,
+        screenshotUrl: screenshotData || '',
+        proofUrl: screenshotData || '',
+        status: 'PENDING',
+        createdAt: new Date().toISOString(),
+        timestamp: serverTimestamp(),
+      });
 
-      // 1. Try server proxy endpoint first (guarantees zero CORS blocking)
-      try {
-        const proxyRes = await fetch('/api/rupayex/create-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderPayload)
-        });
-        if (proxyRes.ok) {
-          data = await proxyRes.json();
-        }
-      } catch (proxyErr) {
-        console.warn('Proxy route attempted, falling back to direct endpoint:', proxyErr);
-      }
+      // 2. Add to user's transactions passbook
+      const txnId = `DEP_${Date.now()}`;
+      await setDoc(doc(db, 'users', user.uid, 'transactions', txnId), {
+        type: 'DEPOSIT',
+        amount: Number(amount),
+        orderId: trimmedUtr,
+        status: 'PENDING',
+        note: `Direct UPI Deposit (UTR: ${trimmedUtr})`,
+        timestamp: new Date().toISOString(),
+      }).catch((err) => {
+        console.warn('Passbook log note:', err);
+      });
 
-      // 2. Direct endpoint fallback if needed
-      if (!data || (!data.payment_url && !data.data?.payment_url)) {
-        const directRes = await fetch('https://rupayex.net/api/create-order', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify(orderPayload)
-        });
-        data = await directRes.json();
-      }
+      // 3. Play sound & celebration
+      sound.playCoin();
+      confetti({
+        particleCount: 70,
+        spread: 60,
+        origin: { y: 0.6 }
+      });
 
-      console.log('Rupayex create-order response:', data);
-
-      const paymentUrl = data?.payment_url || data?.data?.payment_url || data?.url || data?.data?.url || data?.checkout_url;
-
-      if (paymentUrl) {
-        setDepositSuccessMsg('Connecting to Rupayex Gateway...');
-        // Immediately redirect the user to checkout URL
-        window.location.href = paymentUrl;
-      } else {
-        throw new Error(data?.message || 'Payment gateway failed to provide checkout URL.');
-      }
+      // 4. Reset form & notify user
+      setUtrNumber('');
+      setScreenshotData('');
+      setDepositSuccessMsg('Deposit request submitted! Admin will verify and credit balance within 10 minutes.');
     } catch (err: unknown) {
-      console.error('Rupayex payment checkout failed:', err);
-      const msg = err instanceof Error ? err.message : 'Unable to connect to Rupayex payment gateway.';
+      console.error('Failed to submit deposit request:', err);
+      const msg = err instanceof Error ? err.message : 'Failed to submit payment proof. Please try again.';
       setDepositError(msg);
+    } finally {
       setDepositSubmitting(false);
     }
   };
@@ -673,65 +592,150 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 <span>Back to Wallet & Stats Overview</span>
               </button>
 
-              {/* Rupayex Security & Trust Banner */}
-              <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-start gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+              {/* Direct UPI QR Deposit Header & Trust Banner */}
+              <div className="p-3.5 bg-gradient-to-r from-red-950/40 via-amber-950/20 to-black border border-red-500/30 rounded-2xl text-xs flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 shrink-0">
+                  <QrCode className="w-5 h-5" />
+                </div>
                 <div>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <strong className="text-white">Rupayex Instant Gateway</strong>
-                    <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold">
-                      VERIFIED
+                  <div className="flex items-center gap-2 mb-1">
+                    <strong className="text-white font-heading font-black tracking-wide">DIRECT UPI QR DEPOSIT</strong>
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-mono font-bold border border-emerald-500/30">
+                      0% FEE • INSTANT
                     </span>
                   </div>
-                  <span className="text-slate-300">
-                    Supports Google Pay, PhonePe, Paytm, BHIM, UPI QR & NetBanking. Your coins are credited <strong>instantly</strong> upon payment.
-                  </span>
+                  <p className="text-slate-300 text-[11px] leading-relaxed">
+                    Scan the QR code or pay to the official Admin UPI ID below using any UPI app. Enter your 12-digit UTR reference number and upload payment proof to get instant credit.
+                  </p>
                 </div>
               </div>
 
               {depositSuccessMsg && (
-                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-xs text-emerald-300 flex items-center gap-2 animate-pulse">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="font-semibold">{depositSuccessMsg}</span>
+                <div className="p-4 bg-emerald-950/60 border border-emerald-500/60 rounded-2xl text-xs text-emerald-200 flex items-start gap-3 shadow-lg shadow-emerald-950/50 animate-in fade-in">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-bold text-white block mb-0.5">Payment Proof Submitted!</strong>
+                    <span>{depositSuccessMsg}</span>
+                  </div>
                 </div>
               )}
 
               {depositError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-300 flex items-center gap-2">
+                <div className="p-3.5 bg-red-950/60 border border-red-500/60 rounded-2xl text-xs text-red-200 flex items-center gap-2.5 shadow-lg shadow-red-950/50">
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
                   <span>{depositError}</span>
                 </div>
               )}
 
-              {/* Amount Input & Quick Select Chips */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                  Deposit Amount (₹20 - ₹10,000)
-                </label>
-                <div className="relative mb-3">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-400 font-mono font-bold text-base">₹</span>
-                  <input
-                    type="number"
-                    placeholder="Enter custom amount (₹20 - ₹10,000)"
-                    value={customAmount}
-                    onChange={(e) => {
-                      setCustomAmount(e.target.value);
-                      setDepositError(null);
-                    }}
-                    min={20}
-                    max={10000}
-                    className="w-full h-12 pl-8 pr-4 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-red-500 shadow-inner"
-                  />
-                </div>
-
-                {/* Quick Select Chips directly under the input box */}
-                <div>
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-amber-400 font-bold">
-                      <Zap className="w-3.5 h-3.5 fill-amber-400" /> Fast Deposit Chips
+              {/* QR Code & Admin UPI ID Display Container */}
+              <div className="p-5 rounded-3xl bg-gradient-to-b from-[#141226] via-[#0c0d18] to-[#070810] border border-red-950/80 shadow-2xl space-y-5">
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
+                  {/* Clean QR Code Container */}
+                  <div className="flex flex-col items-center">
+                    <div className="p-3.5 rounded-2xl bg-white shadow-2xl shadow-red-950/60 border-2 border-red-500/40 relative">
+                      <QrCodeCanvas
+                        value={currentUpiUri}
+                        size={168}
+                      />
+                      <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-mono font-black tracking-wider shadow">
+                        SCAN TO PAY
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono mt-3.5">
+                      Payee: <strong className="text-white">{adminSettings.upiName || 'Fire Arena Pro'}</strong>
                     </span>
+                  </div>
+
+                  {/* Admin UPI Details & Copy Button */}
+                  <div className="flex-1 w-full space-y-3.5 text-center sm:text-left">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider block mb-1">
+                        Official Admin UPI ID:
+                      </span>
+                      <div className="flex items-center gap-2 p-2.5 rounded-xl bg-black/80 border border-red-950/80">
+                        <span className="flex-1 font-mono font-bold text-amber-400 text-xs sm:text-sm truncate select-all px-1">
+                          {cleanPayeeVpa}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCopyUpi}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                            copiedUpi
+                              ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/30'
+                              : 'bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-950/50'
+                          }`}
+                        >
+                          {copiedUpi ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copy UPI ID</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Accepted Payment Badges */}
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider block mb-1.5">
+                        Accepted UPI Apps:
+                      </span>
+                      <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[11px] font-bold">
+                          <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+                          Google Pay
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30 text-purple-300 text-[11px] font-bold">
+                          <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></span>
+                          PhonePe
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                          Paytm
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                          BHIM UPI
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Deposit Form Section */}
+              <form onSubmit={handleDepositSubmit} className="space-y-4">
+                {/* 1. Amount Input & Quick Select Chips */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                      Amount to Add (₹)
+                    </label>
                     <span className="text-[10px] text-slate-500 font-mono">Min ₹20 • Max ₹10,000</span>
                   </div>
+                  <div className="relative mb-2.5">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-400 font-mono font-bold text-base">₹</span>
+                    <input
+                      type="number"
+                      placeholder="Enter amount to deposit"
+                      value={customAmount}
+                      onChange={(e) => {
+                        setCustomAmount(e.target.value);
+                        setDepositError(null);
+                      }}
+                      min={20}
+                      max={10000}
+                      required
+                      className="w-full h-12 pl-8 pr-4 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-red-500 shadow-inner"
+                    />
+                  </div>
+
+                  {/* Fast Deposit Chips */}
                   <div className="grid grid-cols-4 gap-2">
                     {[
                       { label: '₹20', value: 20 },
@@ -765,141 +769,100 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     })}
                   </div>
                 </div>
-              </div>
 
-              {/* Rupayex Checkout Summary Card */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#110f22] to-[#090a14] border border-red-950/80 space-y-4 shadow-xl">
-                <div className="flex items-center justify-between pb-3 border-b border-red-950/60">
-                  <div className="flex items-center gap-2">
-                    <CreditCard className="w-4 h-4 text-amber-400" />
-                    <span className="text-xs font-heading font-black text-white uppercase tracking-wider">
-                      Checkout Summary
-                    </span>
+                {/* 2. 12-Digit UTR / Transaction ID (Required) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>12-Digit UTR / Transaction ID</span>
+                      <span className="text-red-400 font-bold">*</span>
+                    </label>
+                    <span className="text-[10px] text-amber-400 font-mono">Required for verification</span>
                   </div>
-                  <span className="text-[11px] font-mono text-emerald-400 font-bold flex items-center gap-1">
-                    <Zap className="w-3 h-3 fill-emerald-400" /> Auto-Credit Active
-                  </span>
+                  <input
+                    type="text"
+                    placeholder="e.g. 412384918234 or UPI Ref No."
+                    value={utrNumber}
+                    onChange={(e) => {
+                      setUtrNumber(e.target.value);
+                      setDepositError(null);
+                    }}
+                    required
+                    maxLength={32}
+                    className="w-full h-12 px-4 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-red-500 shadow-inner"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Found in your UPI app transaction details (Google Pay, PhonePe, Paytm, BHIM) as "UPI Ref ID" or "UTR".
+                  </p>
                 </div>
 
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span>Deposit Amount:</span>
-                    <span className="font-mono font-bold text-white">₹{currentEffectiveDepositAmount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span>Coins Credited:</span>
-                    <span className="font-mono font-black text-amber-400">🪙 {currentEffectiveDepositAmount}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span>Gateway Fees:</span>
-                    <span className="font-mono font-bold text-emerald-400">₹0 (100% FREE)</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-400">
-                    <span>Merchant Gateway:</span>
-                    <span className="font-mono text-slate-200">Rupayex Instant UPI</span>
-                  </div>
+                {/* 3. Screenshot Upload (Payment Proof) */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block mb-1.5">
+                    Upload Payment Screenshot (Proof)
+                  </label>
+
+                  {screenshotData ? (
+                    <div className="p-3 rounded-2xl bg-black/60 border border-emerald-500/40 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={screenshotData}
+                          alt="Uploaded payment proof"
+                          className="w-14 h-14 rounded-lg object-cover border border-emerald-500/50 bg-black"
+                        />
+                        <div>
+                          <span className="text-xs font-bold text-white block">Screenshot Attached</span>
+                          <span className="text-[10px] text-emerald-400 font-mono">Ready to submit with proof</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setScreenshotData('')}
+                        className="px-3 py-1.5 rounded-lg bg-red-950/60 hover:bg-red-900/60 text-red-400 border border-red-800 text-xs font-semibold cursor-pointer"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center p-4 rounded-2xl border-2 border-dashed border-red-950/80 hover:border-red-500/60 bg-[#06070a] cursor-pointer transition-colors group">
+                      <Upload className="w-6 h-6 text-slate-500 group-hover:text-red-400 mb-1 transition-colors" />
+                      <span className="text-xs font-semibold text-slate-300 group-hover:text-white">
+                        Click to select payment screenshot
+                      </span>
+                      <span className="text-[10px] text-slate-500 mt-0.5">PNG, JPG, or WEBP (Max 5MB)</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleScreenshotChange}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
                 </div>
 
-                {/* Main Action Button: Proceed to Pay with Duplicate Transaction Guard */}
+                {/* Submit Action Button */}
                 <button
-                  type="button"
-                  onClick={handleProceedToPayRupayex}
-                  disabled={depositSubmitting || currentEffectiveDepositAmount < 20 || currentEffectiveDepositAmount > 10000}
-                  className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-red-950/80 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 border border-red-500/40"
+                  type="submit"
+                  disabled={depositSubmitting || currentEffectiveDepositAmount < 20 || !utrNumber.trim()}
+                  className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-red-950/80 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 border border-red-500/40 mt-2"
                 >
                   <Lock className="w-4 h-4 text-white" />
                   <span>
                     {depositSubmitting
-                      ? 'Connecting Gateway...'
-                      : currentEffectiveDepositAmount >= 20 && currentEffectiveDepositAmount <= 10000
-                      ? `Proceed to Pay ₹${currentEffectiveDepositAmount}`
-                      : 'Enter Amount (₹20 - ₹10,000)'}
+                      ? 'Submitting Proof...'
+                      : `Submit Payment Proof (₹${currentEffectiveDepositAmount})`}
                   </span>
-                  <ExternalLink className="w-3.5 h-3.5 text-white/80" />
                 </button>
+              </form>
 
-                <p className="text-[11px] text-center text-slate-500">
-                  You will be securely redirected to Rupayex payment gateway. Complete payment using any UPI app and your wallet will be updated automatically.
+              {/* Security & Verification Notice */}
+              <div className="p-3.5 rounded-xl bg-[#090b14] border border-red-950/60 text-center text-[11px] text-slate-400 space-y-1">
+                <p>
+                  ⚡ Admin verifies deposits quickly. Coins will be credited to your wallet within <strong>5–10 minutes</strong>.
                 </p>
-              </div>
-
-              {/* Fallback Payment Verification / Status Checker */}
-              <div className="p-4 rounded-2xl bg-[#090b14] border border-red-950/60 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-200">
-                    <RefreshCw className={`w-4 h-4 text-amber-400 ${isVerifying ? 'animate-spin' : ''}`} />
-                    <span>Check Deposit Status / Verify</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowManualVerifyInput(!showManualVerifyInput)}
-                    className="text-[11px] text-red-400 hover:text-red-300 font-semibold cursor-pointer"
-                  >
-                    {showManualVerifyInput ? 'Hide Custom Input' : 'Enter Order ID Manually'}
-                  </button>
-                </div>
-
-                <p className="text-[11px] text-slate-400">
-                  Payment kiya par coins add nahi huye? Instant bank verification chalaayein:
+                <p className="text-[10px] text-slate-500">
+                  For payment assistance, contact Admin via WhatsApp Support in settings.
                 </p>
-
-                {pendingOrder && (
-                  <div className="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800 flex items-center justify-between text-xs">
-                    <div>
-                      <div className="text-[10px] text-slate-400 uppercase font-mono">Recent Order Pending</div>
-                      <div className="font-mono text-white font-bold">{pendingOrder.orderId} (₹{pendingOrder.amount})</div>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isVerifying}
-                      onClick={() => handleCheckDepositStatus(pendingOrder.orderId)}
-                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-black text-[11px] uppercase cursor-pointer disabled:opacity-50 flex items-center gap-1 shadow-md shadow-amber-500/20"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isVerifying ? 'animate-spin' : ''}`} />
-                      <span>{isVerifying ? 'Checking...' : 'Check Status'}</span>
-                    </button>
-                  </div>
-                )}
-
-                {showManualVerifyInput && (
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="text"
-                      placeholder="e.g. TXN_1720000000000_uid"
-                      value={verifyingOrderId}
-                      onChange={(e) => setVerifyingOrderId(e.target.value)}
-                      className="flex-1 h-9 px-3 rounded-lg bg-black border border-red-950/70 text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-red-500"
-                    />
-                    <button
-                      type="button"
-                      disabled={isVerifying || !verifyingOrderId.trim()}
-                      onClick={() => handleCheckDepositStatus()}
-                      className="h-9 px-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase cursor-pointer disabled:opacity-50 flex items-center gap-1 shrink-0"
-                    >
-                      <RefreshCw className={`w-3 h-3 ${isVerifying ? 'animate-spin' : ''}`} />
-                      <span>{isVerifying ? 'Verifying...' : 'Verify'}</span>
-                    </button>
-                  </div>
-                )}
-
-                {verifyResultMsg && (
-                  <div
-                    className={`p-3 rounded-xl text-xs flex items-center gap-2 border ${
-                      verifyResultMsg.type === 'success'
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
-                        : verifyResultMsg.type === 'error'
-                        ? 'bg-red-500/10 border-red-500/30 text-red-300'
-                        : 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                    }`}
-                  >
-                    {verifyResultMsg.type === 'success' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                    )}
-                    <span>{verifyResultMsg.text}</span>
-                  </div>
-                )}
               </div>
             </div>
           )}

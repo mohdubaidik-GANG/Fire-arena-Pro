@@ -29,6 +29,7 @@ import {
   Bell,
   Megaphone,
   Radio,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   collection,
@@ -306,9 +307,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   // ---------------- ACTION HANDLERS ---------------- //
 
-  // Approve Deposit Request (Credits User's Deposit Balance)
+  // Approve Deposit Request (Credits User's Wallet Balance directly)
   const handleApproveDeposit = async (dep: DepositRequest) => {
-    if (!confirm(`Approve deposit of ₹${dep.amount} for ${dep.userIgn} (${dep.userEmail})? This will immediately credit their Deposit Balance.`)) {
+    if (!confirm(`Approve deposit of ₹${dep.amount} for ${dep.userIgn || 'Player'} (${dep.userEmail})? This will immediately add ₹${dep.amount} to their wallet balance.`)) {
       return;
     }
 
@@ -317,20 +318,51 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         const userRef = doc(db, 'users', dep.userId);
         const userSnap = await transaction.get(userRef);
 
-        const currentDeposit = userSnap.exists() ? userSnap.data()?.depositBalance || 0 : 0;
-        const newDeposit = currentDeposit + dep.amount;
+        const currentDeposit = userSnap.exists() ? (userSnap.data()?.depositBalance || 0) : 0;
+        const currentWalletBal = userSnap.exists()
+          ? (userSnap.data()?.walletBalance ?? userSnap.data()?.wallet_balance ?? currentDeposit)
+          : 0;
 
+        const newDeposit = currentDeposit + dep.amount;
+        const newWalletBal = currentWalletBal + dep.amount;
+
+        // Adds the amount directly to the user's wallet balance
         transaction.update(userRef, {
+          walletBalance: newWalletBal,
           depositBalance: newDeposit,
+          wallet_balance: newWalletBal,
           updatedAt: new Date().toISOString(),
         });
 
+        // Updates status to 'APPROVED'
         const depRef = doc(db, 'depositRequests', dep.id);
         transaction.update(depRef, {
-          status: 'approved',
+          status: 'APPROVED',
           reviewedAt: new Date().toISOString(),
         });
+
+        // Add ledger record to user's transactions passbook
+        const txnRef = doc(collection(db, 'users', dep.userId, 'transactions'));
+        transaction.set(txnRef, {
+          type: 'DEPOSIT',
+          amount: dep.amount,
+          orderId: dep.utrNumber || dep.id,
+          status: 'SUCCESS',
+          note: `Deposit Approved (UTR: ${dep.utrNumber || 'Direct UPI'})`,
+          timestamp: new Date().toISOString(),
+        });
+
+        // Push notification to user
+        const notifRef = doc(collection(db, 'users', dep.userId, 'notifications'));
+        transaction.set(notifRef, {
+          title: '🪙 Deposit Approved!',
+          message: `₹${dep.amount} has been added directly to your wallet balance. UTR: ${dep.utrNumber || 'N/A'}`,
+          category: 'WALLET',
+          createdAt: new Date().toISOString(),
+        });
       });
+
+      alert(`✅ Deposit of ₹${dep.amount} approved! User wallet balance credited.`);
     } catch (err: unknown) {
       alert(`Failed to approve deposit: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -343,10 +375,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     try {
       await updateDoc(doc(db, 'depositRequests', dep.id), {
-        status: 'rejected',
+        status: 'REJECTED',
         adminNote: reason,
         reviewedAt: new Date().toISOString(),
       });
+      alert(`Deposit request marked as REJECTED.`);
     } catch (err: unknown) {
       alert(`Failed to reject deposit: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -581,7 +614,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   // Filtered deposits & withdrawals
-  const filteredDeposits = deposits.filter((d) => depositFilter === 'all' || d.status === depositFilter);
+  const filteredDeposits = deposits.filter((d) => depositFilter === 'all' || (d.status || '').toLowerCase() === depositFilter.toLowerCase());
   const filteredWithdrawals = withdrawals.filter((w) => withdrawalFilter === 'all' || w.status === withdrawalFilter);
 
   // Filtered users
@@ -1047,10 +1080,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                           UTR: {dep.utrNumber}
                         </span>
                         <span
-                          className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded ${
-                            dep.status === 'pending'
+                          className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded font-bold ${
+                            (dep.status || '').toLowerCase() === 'pending'
                               ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                              : dep.status === 'approved'
+                              : (dep.status || '').toLowerCase() === 'approved'
                               ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                               : 'bg-red-500/20 text-red-400 border border-red-500/30'
                           }`}
@@ -1060,25 +1093,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       </div>
 
                       <div className="text-xs text-slate-400 flex flex-wrap items-center gap-3">
-                        <span>Gamer IGN: <strong className="text-white">{dep.userIgn}</strong></span>
+                        <span>Gamer IGN: <strong className="text-white">{dep.userIgn || 'Player'}</strong></span>
                         <span>·</span>
-                        <span>Email: <strong className="text-slate-300 font-mono">{dep.userEmail}</strong></span>
+                        <span>Email: <strong className="text-slate-300 font-mono">{dep.userEmail || 'N/A'}</strong></span>
                         <span>·</span>
-                        <span>Time: {new Date(dep.createdAt).toLocaleString()}</span>
+                        <span>Time: {dep.createdAt ? new Date(dep.createdAt).toLocaleString() : 'Recent'}</span>
                       </div>
 
-                      {dep.proofUrl && dep.proofUrl.startsWith('data:image') && (
+                      {/* Payment Proof Image Preview */}
+                      {(dep.screenshotUrl || dep.proofUrl) && (
                         <div className="pt-2">
-                          <img
-                            src={dep.proofUrl}
-                            alt="Payment screenshot proof"
-                            className="max-h-36 rounded-lg border border-slate-700 shadow-md object-contain bg-black"
-                          />
+                          <div className="text-[10px] text-slate-400 font-mono mb-1.5 flex items-center gap-1">
+                            <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Payment Proof Screenshot:</span>
+                          </div>
+                          <a
+                            href={dep.screenshotUrl || dep.proofUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block group relative"
+                            title="Click to view full screenshot proof"
+                          >
+                            <img
+                              src={dep.screenshotUrl || dep.proofUrl}
+                              alt="Payment screenshot proof"
+                              className="max-h-48 max-w-xs rounded-xl border border-slate-700 shadow-lg object-contain bg-black group-hover:border-amber-400 transition-colors"
+                            />
+                            <span className="text-[10px] text-amber-400 mt-1 block group-hover:underline">
+                              🔍 Click to inspect full image
+                            </span>
+                          </a>
                         </div>
                       )}
                     </div>
 
-                    {dep.status === 'pending' && (
+                    {(dep.status || '').toLowerCase() === 'pending' && (
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           onClick={() => handleApproveDeposit(dep)}

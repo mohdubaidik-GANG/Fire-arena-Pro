@@ -269,22 +269,12 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
       const search = window.location.search;
-      if (path === '/wallet' || path.startsWith('/wallet/') || search.includes('payment=success')) {
+      if (path === '/wallet' || path.startsWith('/wallet/')) {
         return 'wallet';
       }
     }
     return 'play';
   });
-
-  // Rupayex Payment Success Banner & Popup States
-  const [paymentSuccessBanner, setPaymentSuccessBanner] = useState<{
-    amount: number;
-    orderId: string;
-  } | null>(null);
-  const [paymentSuccessPopup, setPaymentSuccessPopup] = useState<{
-    amount: number;
-    orderId: string;
-  } | null>(null);
 
   // Category and Mode Type Switcher on Play Screen
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -418,140 +408,6 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
     }, 5000);
     return () => clearInterval(timer);
   }, []);
-
-  // Auto-Credit Rupayex Payment Gateway Return (/wallet?payment=success&order_id={id}&amount={amt})
-  useEffect(() => {
-    if (!user) return;
-
-    const handleRupayexReturn = async () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const isSuccess = urlParams.get('payment') === 'success' || urlParams.get('status') === 'success';
-
-      if (!isSuccess) return;
-
-      const pendingOrderRaw = localStorage.getItem('pending_rupayex_order');
-      let pendingOrder: any = null;
-      try {
-        pendingOrder = pendingOrderRaw ? JSON.parse(pendingOrderRaw) : null;
-      } catch {}
-
-      const urlOrderId = urlParams.get('order_id') || urlParams.get('orderId');
-      const urlAmount = urlParams.get('amount');
-
-      const orderId = String(urlOrderId || pendingOrder?.orderId || `TXN_${Date.now()}_${user.uid}`).trim();
-      const amount = Number(urlAmount || pendingOrder?.amount || 0);
-
-      if (amount <= 0) {
-        console.warn('[Rupayex] Arrived with payment=success but no valid amount found.');
-        return;
-      }
-
-      const alreadyCreditedKey = `rupayex_credited_${orderId}`;
-
-      try {
-        // 1. Check Firestore to ensure this order_id hasn't been credited already (prevent duplicate credits)
-        const txnRef = doc(db, 'transactions', orderId);
-        const txnSnap = await getDoc(txnRef);
-
-        if (txnSnap.exists() && txnSnap.data()?.status === 'COMPLETED') {
-          console.log(`[Rupayex Auto-Credit] Order ${orderId} already credited in Firestore.`);
-          setActiveTab('wallet');
-          setPaymentSuccessBanner({ amount, orderId });
-          setPaymentSuccessPopup({ amount, orderId });
-          localStorage.removeItem('pending_rupayex_order');
-          window.history.replaceState(null, '', '/wallet');
-          return;
-        }
-
-        // Prevent concurrent run within same browser session
-        if (localStorage.getItem(alreadyCreditedKey)) {
-          setActiveTab('wallet');
-          setPaymentSuccessBanner({ amount, orderId });
-          setPaymentSuccessPopup({ amount, orderId });
-          window.history.replaceState(null, '', '/wallet');
-          return;
-        }
-        localStorage.setItem(alreadyCreditedKey, 'true');
-
-        console.log(`[Rupayex Auto-Credit] Crediting ₹${amount} to user ${user.uid} for order ${orderId}`);
-
-        // 2. Update Firestore user document: increment depositBalance and wallet_balance
-        const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-          depositBalance: increment(Number(amount)),
-          wallet_balance: increment(Number(amount)),
-          updatedAt: new Date().toISOString()
-        });
-
-        // 3. Mark transaction record in 'transactions' collection & 'deposit_orders'
-        await setDoc(doc(db, 'transactions', orderId), {
-          userId: user.uid,
-          amount: Number(amount),
-          orderId: orderId,
-          status: 'COMPLETED',
-          type: 'DEPOSIT',
-          gateway: 'RUPAYEX',
-          createdAt: new Date().toISOString()
-        });
-
-        // Also record in users/{uid}/transactions
-        await setDoc(doc(db, 'users', user.uid, 'transactions', orderId), {
-          userId: user.uid,
-          amount: Number(amount),
-          orderId: orderId,
-          status: 'COMPLETED',
-          type: 'DEPOSIT',
-          gateway: 'RUPAYEX',
-          createdAt: new Date().toISOString()
-        });
-
-        // 4. Record in 'depositRequests' & 'walletHistory' for user UI transaction feed
-        const txnRecord = {
-          userId: user.uid,
-          userFfUid: profile?.freeFireUid || pendingOrder?.userFfUid || '10000000',
-          amount: Number(amount),
-          orderId: orderId,
-          status: 'COMPLETED',
-          type: 'DEPOSIT',
-          gateway: 'RUPAYEX',
-          createdAt: new Date().toISOString()
-        };
-
-        await addDoc(collection(db, 'depositRequests'), {
-          ...txnRecord,
-          userEmail: user.email || '',
-          userIgn: profile?.ign || 'Player',
-          utrNumber: orderId,
-          reviewedAt: new Date().toISOString()
-        });
-
-        await addDoc(collection(db, 'walletHistory'), txnRecord);
-
-        // 5. Update UI states, open wallet, and celebrate with coin sound & confetti
-        setActiveTab('wallet');
-        setPaymentSuccessBanner({ amount, orderId });
-        setPaymentSuccessPopup({ amount, orderId });
-        localStorage.removeItem('pending_rupayex_order');
-
-        try {
-          sound.playCoin();
-          confetti({
-            particleCount: 120,
-            spread: 80,
-            origin: { y: 0.6 }
-          });
-        } catch {}
-
-        // 6. Clean URL query parameters immediately using window.history.replaceState
-        window.history.replaceState(null, '', '/wallet');
-      } catch (err) {
-        console.error('[Rupayex Auto-Credit Error]:', err);
-        localStorage.removeItem(alreadyCreditedKey);
-      }
-    };
-
-    handleRupayexReturn();
-  }, [user, profile]);
 
   // Realtime Matches Listener (Single Source of Truth: 'matches')
   useEffect(() => {
@@ -1572,36 +1428,6 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
            ========================================================================= */}
         {activeTab === 'wallet' && (
           <div className="space-y-6 animate-in fade-in duration-200">
-            {paymentSuccessBanner && (
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-950/90 via-[#0d281e] to-emerald-900/70 border-2 border-emerald-500 shadow-2xl shadow-emerald-950/80 flex items-center justify-between gap-4 animate-in fade-in slide-in-from-top-3">
-                <div className="flex items-center gap-3.5">
-                  <div className="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                    <CheckCircle2 className="w-7 h-7 stroke-[2.5]" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm sm:text-base font-black font-heading text-white uppercase tracking-wider flex items-center gap-2">
-                      <span>Payment Successful!</span>
-                      <span className="px-2 py-0.2 rounded-full bg-emerald-500 text-black text-[9px] font-mono font-black">
-                        AUTO-CREDITED
-                      </span>
-                    </h3>
-                    <p className="text-xs text-emerald-300 font-medium mt-0.5">
-                      🪙 <strong className="text-white font-bold">{paymentSuccessBanner.amount} Coins</strong> have been credited to your wallet.
-                      <span className="text-[10px] text-slate-400 font-mono block sm:inline sm:ml-2">
-                        Order ID: {paymentSuccessBanner.orderId}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setPaymentSuccessBanner(null)}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-emerald-900/40 transition-colors cursor-pointer"
-                  title="Dismiss Banner"
-                >
-                  <XCircle className="w-5 h-5" />
-                </button>
-              </div>
-            )}
 
             <WalletAndCareerStats
               onOpenDeposit={() => handleOpenWallet('deposit')}
@@ -2029,46 +1855,6 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         )}
       </React.Suspense>
 
-      {/* Rupayex Instant Auto-Credit Success Popup */}
-      {paymentSuccessPopup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in">
-          <div className="w-full max-w-sm rounded-3xl bg-[#0c0d18] border-2 border-emerald-500/70 p-6 shadow-2xl text-center relative animate-in fade-in zoom-in-95">
-            <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 mx-auto mb-4 shadow-lg shadow-emerald-500/20">
-              <CheckCircle2 className="w-9 h-9 stroke-[2.5]" />
-            </div>
-
-            <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-black uppercase tracking-wider">
-              Deposit Successful
-            </span>
-
-            <h3 className="text-xl font-black text-white font-heading mt-3">
-              Payment Auto-Credited!
-            </h3>
-
-            <div className="my-4 p-3.5 rounded-2xl bg-black/60 border border-emerald-500/30">
-              <span className="text-xs text-slate-400 font-mono block">Coins Added:</span>
-              <span className="text-3xl font-black font-mono text-emerald-400 tracking-wider">
-                +🪙 {paymentSuccessPopup.amount}
-              </span>
-            </div>
-
-            <p className="text-xs text-emerald-300 font-semibold leading-relaxed mb-4">
-              ₹{paymentSuccessPopup.amount} aapke wallet mein successfully credit ho gaye hain!
-            </p>
-
-            <span className="text-[10px] text-slate-500 font-mono block mb-5">
-              Order ID: {paymentSuccessPopup.orderId}
-            </span>
-
-            <button
-              onClick={() => setPaymentSuccessPopup(null)}
-              className="w-full h-11 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-heading font-black text-xs uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/30 cursor-pointer active:scale-95"
-            >
-              Continue to Play
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Suspense Container for Lazy Loaded Modals */}
       <React.Suspense fallback={null}>
