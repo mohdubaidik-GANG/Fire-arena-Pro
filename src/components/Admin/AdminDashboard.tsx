@@ -114,7 +114,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // State for match deletion modal and admin feedback toasts
   const [matchToDelete, setMatchToDelete] = useState<{ id: string; title?: string } | null>(null);
   const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
-  const [cleaningMatches, setCleaningMatches] = useState<boolean>(false);
   const [adminToast, setAdminToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -542,89 +541,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // One-Click Bulk Cleanup: Delete Auto-Created & Empty Matches
-  const handleDeleteEmptyAndAutoMatches = async () => {
-    const dummyTitles = [
-      'bermuda rush',
-      'cs clash',
-      'purgatory survival',
-      'lone wolf',
-      'kalahari sniper',
-      'nexterra clash',
-      'stealth clash',
-      'grand championship',
-      'fast room',
-      'giveaway room',
-      'one-tap',
-      'free match',
-      'night mode',
-      'elite match',
-      'cs match'
-    ];
-
-    const targets = tournaments.filter((t) => {
-      const isZeroPlayers = (t.registeredCount || 0) === 0 || !t.joinedPlayers || t.joinedPlayers.length === 0;
-      const titleLower = (t.title || '').toLowerCase();
-      const isDummyTitle = dummyTitles.some((dummy) => titleLower.includes(dummy));
-      return isZeroPlayers || isDummyTitle;
-    });
-
-    if (targets.length === 0) {
-      showToast('No empty or auto-created dummy matches found in database.', 'info');
-      return;
-    }
-
-    try {
-      if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
-        const confirmed = window.confirm(
-          `Found ${targets.length} empty or auto-created match(es).\n\nDo you want to permanently delete them all from the database?`
-        );
-        if (!confirmed) return;
-      }
-    } catch {
-      // In case window.confirm is restricted in iframe, proceed with cleanup
-    }
-
-    setCleaningMatches(true);
-    const targetIds = new Set(targets.map((t) => t.id));
-
-    // 1. Optimistic UI update: Remove all target matches immediately
-    targetIds.forEach((id) => {
-      tourneysMapRef.current.delete(id);
-      matchesMapRef.current.delete(id);
-    });
-    setTournaments((prev) => prev.filter((m) => !targetIds.has(m.id)));
-
-    // Clean cached_tournaments in localStorage
-    try {
-      const cached = localStorage.getItem('cached_tournaments');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          const updated = parsed.filter((m: any) => !targetIds.has(m.id));
-          localStorage.setItem('cached_tournaments', JSON.stringify(updated));
-        }
-      }
-    } catch {}
-
-    try {
-      // 2. Direct client-side deletion for each match (Strictly Client SDK, Zero Fetch)
-      for (const t of targets) {
-        await Promise.allSettled([
-          deleteDoc(doc(db, 'matches', t.id)),
-          deleteDoc(doc(db, 'tournaments', t.id))
-        ]);
-      }
-
-      showToast(`Successfully deleted ${targets.length} empty & auto-created dummy matches!`, 'success');
-    } catch (err: unknown) {
-      console.warn('Cleanup completed with notes:', err);
-      showToast(`Finished cleaning empty matches.`, 'success');
-    } finally {
-      setCleaningMatches(false);
-    }
-  };
-
   // Quick 1-Click Status Management
   const handleSetMatchStatus = async (matchId: string, newStatus: 'UPCOMING' | 'LIVE' | 'COMPLETED') => {
     try {
@@ -845,22 +761,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   Fire Arena Pro Match Engine
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Manage custom rooms, unlock real-time credentials, and auto-disburse kill & rank prizes across 12 game modes.
+                  Manage custom rooms, unlock real-time credentials, and disburse kill & rank prizes.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                <button
-                  type="button"
-                  onClick={handleDeleteEmptyAndAutoMatches}
-                  disabled={cleaningMatches}
-                  className="h-10 px-3.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 hover:text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 border border-rose-800/40 transition-all cursor-pointer disabled:opacity-50"
-                  title="One-click clean up all empty matches and dummy seeds"
-                >
-                  <Trash2 className={`w-4 h-4 text-rose-400 ${cleaningMatches ? 'animate-spin' : ''}`} />
-                  <span>{cleaningMatches ? 'Cleaning Matches...' : 'Delete Auto-Created/Empty Matches'}</span>
-                </button>
-
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setShowCreateModal(true)}
                   className="h-10 px-4 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-red-950/50 transition-all cursor-pointer shrink-0 border border-red-500/40"
@@ -894,14 +799,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             {displayedTournaments.length === 0 ? (
               <div className="p-8 rounded-2xl bg-[#090a12] border border-red-950/70 text-center space-y-2">
                 <Trophy className="w-10 h-10 text-red-700 mx-auto mb-2" />
-                <p className="text-base font-bold text-white uppercase tracking-wider">No matches created yet</p>
-                <p className="text-xs text-slate-400 max-w-sm mx-auto">Click "Create Match" to add one.</p>
+                <p className="text-base font-bold text-white uppercase tracking-wider">No active matches</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">Click 'CREATE MATCH' to host a tournament.</p>
                 <div className="pt-2">
                   <button
                     onClick={() => setShowCreateModal(true)}
                     className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-red-900/40 cursor-pointer"
                   >
-                    + Create Match Now
+                    + CREATE MATCH
                   </button>
                 </div>
               </div>
