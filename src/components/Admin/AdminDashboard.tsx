@@ -892,16 +892,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </div>
 
             {displayedTournaments.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-[#090a12] border border-red-950/70 text-center">
+              <div className="p-8 rounded-2xl bg-[#090a12] border border-red-950/70 text-center space-y-2">
                 <Trophy className="w-10 h-10 text-red-700 mx-auto mb-2" />
-                <p className="text-sm font-bold text-slate-200 uppercase tracking-wider">No Matches in this Category</p>
-                <p className="text-xs text-slate-500 mt-1 mb-4">Launch a new Free Fire MAX match room or switch filters</p>
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs font-bold uppercase tracking-wider"
-                >
-                  Create Match Now
-                </button>
+                <p className="text-base font-bold text-white uppercase tracking-wider">No matches created yet</p>
+                <p className="text-xs text-slate-400 max-w-sm mx-auto">Click "Create Match" to add one.</p>
+                <div className="pt-2">
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-red-900/40 cursor-pointer"
+                  >
+                    + Create Match Now
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

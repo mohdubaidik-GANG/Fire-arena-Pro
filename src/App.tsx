@@ -313,25 +313,10 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   // Promo Banner Carousel
   const [activeBannerIdx, setActiveBannerIdx] = useState(0);
 
-  // Tournaments & Registrations Data with LocalStorage Caching for zero-lag instant display
-  const [tournaments, setTournaments] = useState<Tournament[]>(() => {
-    try {
-      const cached = localStorage.getItem('cached_tournaments');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {}
-    return [];
-  });
+  // Tournaments & Registrations Data (Strictly initial empty array [])
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [myRegistrations, setMyRegistrations] = useState<Record<string, TournamentRegistration>>({});
-  const [fetchingTournaments, setFetchingTournaments] = useState(() => {
-    try {
-      return !localStorage.getItem('cached_tournaments');
-    } catch {
-      return true;
-    }
-  });
+  const [fetchingTournaments, setFetchingTournaments] = useState(true);
   const [tournamentsError, setTournamentsError] = useState<string | null>(null);
 
   const handleRetryMatches = () => {
@@ -1176,11 +1161,11 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               ) : filteredTournaments.length === 0 ? (
                 <div className="p-8 rounded-2xl bg-[#090a14] border border-red-950/60 text-center space-y-3">
                   <Trophy className="w-10 h-10 text-slate-600 mx-auto" />
-                  <h3 className="text-sm font-bold text-white font-heading">
-                    No Tournaments Found
+                  <h3 className="text-base font-bold text-white font-heading">
+                    No matches created yet
                   </h3>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    New custom rooms launch every 30 minutes. Check other categories or view all open tournaments.
+                    No tournaments are currently active in this category. Click "Create Match" in the Admin Panel to publish one.
                   </p>
                   <button
                     onClick={() => {
@@ -1191,7 +1176,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                     }}
                     className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 text-white font-heading font-bold text-xs uppercase tracking-wider cursor-pointer shadow-md shadow-red-600/30"
                   >
-                    Browse All Open Rooms
+                    Refresh All Rooms
                   </button>
                 </div>
               ) : (
