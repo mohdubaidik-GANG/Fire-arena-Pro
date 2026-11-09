@@ -30,6 +30,7 @@ import {
   TrendingDown,
   Search,
   Upload,
+  Download,
   Image as ImageIcon,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -62,14 +63,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     upiName: 'Fire Arena Pro',
     qrCodeUrl: '',
     supportWhatsapp: 'https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC',
-    minDeposit: 20,
+    minDeposit: 1,
     minWithdrawal: 50,
     rules: 'Deposit is credited within 5-15 mins of UTR verification. Withdrawals processed 24/7.',
   });
 
-  // Deposit Form State (Flexible ₹20 to ₹10,000)
-  const [depositAmount, setDepositAmount] = useState<number>(50);
-  const [customAmount, setCustomAmount] = useState<string>('50');
+  // Deposit Form State (Flexible ₹1 to ₹5,000)
+  const [depositAmount, setDepositAmount] = useState<number>(20);
+  const [customAmount, setCustomAmount] = useState<string>('20');
   const [utrNumber, setUtrNumber] = useState<string>('');
   const [proofNote, setProofNote] = useState<string>('');
   const [screenshotData, setScreenshotData] = useState<string>('');
@@ -253,6 +254,30 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     reader.readAsDataURL(file);
   };
 
+  // Add quick amount chips to current deposit amount (+ ₹10, + ₹20, + ₹50, etc.)
+  const handleAddQuickChip = (chipVal: number) => {
+    const cur = parseFloat(customAmount) || 0;
+    const next = Math.min(5000, Math.max(1, cur + chipVal));
+    setCustomAmount(next.toString());
+    setDepositAmount(next);
+    setDepositError(null);
+  };
+
+  // Download QR Code image to device
+  const handleDownloadQR = () => {
+    try {
+      const canvas = (document.getElementById('upi-payment-qr-canvas') as HTMLCanvasElement) || (document.querySelector('canvas') as HTMLCanvasElement);
+      if (canvas) {
+        const link = document.createElement('a');
+        link.download = `FireArena_UPI_QR_₹${currentEffectiveDepositAmount || 20}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }
+    } catch (err) {
+      console.warn('Download QR error:', err);
+    }
+  };
+
   // Submit Payment Proof to Firestore depositRequests
   const handleDepositSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -263,8 +288,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     setDepositSuccessMsg(null);
 
     const amount = Number(currentEffectiveDepositAmount);
-    if (!amount || isNaN(amount) || amount < 20 || amount > 10000) {
-      setDepositError('Amount must be between ₹20 and ₹10,000.');
+    if (!amount || isNaN(amount) || amount < 1 || amount > 5000) {
+      const errorMsg = 'Deposit amount must be between ₹1 and ₹5,000';
+      setDepositError(errorMsg);
+      try {
+        if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+          window.alert(errorMsg);
+        }
+      } catch {}
       return;
     }
 
@@ -294,12 +325,12 @@ export const WalletModal: React.FC<WalletModalProps> = ({
         userIgn: profile?.ign || (user as any).displayName || 'Player',
         userFfUid: profile?.freeFireUid || '',
         amount: Number(amount),
+        utr: trimmedUtr,
         utrNumber: trimmedUtr,
         screenshotUrl: screenshotData || '',
         proofUrl: screenshotData || '',
         status: 'PENDING',
-        createdAt: new Date().toISOString(),
-        timestamp: serverTimestamp(),
+        createdAt: serverTimestamp(),
       });
 
       // 2. Add to user's transactions passbook
@@ -627,7 +658,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </div>
               )}
 
-              {/* QR Code & Admin UPI ID Display Container */}
+              {/* QR Code & Admin UPI Details Container (Direct UPI QR & Razorpay) */}
               <div className="p-5 rounded-3xl bg-gradient-to-b from-[#141226] via-[#0c0d18] to-[#070810] border border-red-950/80 shadow-2xl space-y-5">
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
                   {/* Clean QR Code Container */}
@@ -636,6 +667,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                       <QrCodeCanvas
                         value={currentUpiUri}
                         size={168}
+                        canvasId="upi-payment-qr-canvas"
                       />
                       <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-red-600 text-white text-[9px] font-mono font-black tracking-wider shadow">
                         SCAN TO PAY
@@ -646,44 +678,56 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                     </span>
                   </div>
 
-                  {/* Admin UPI Details & Copy Button */}
+                  {/* Admin UPI Details, Copy Button & Download QR Button */}
                   <div className="flex-1 w-full space-y-3.5 text-center sm:text-left">
                     <div>
                       <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider block mb-1">
                         Official Admin UPI ID:
                       </span>
-                      <div className="flex items-center gap-2 p-2.5 rounded-xl bg-black/80 border border-red-950/80">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 rounded-xl bg-black/80 border border-red-950/80">
                         <span className="flex-1 font-mono font-bold text-amber-400 text-xs sm:text-sm truncate select-all px-1">
                           {cleanPayeeVpa}
                         </span>
-                        <button
-                          type="button"
-                          onClick={handleCopyUpi}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all flex items-center gap-1.5 cursor-pointer shrink-0 ${
-                            copiedUpi
-                              ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/30'
-                              : 'bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-950/50'
-                          }`}
-                        >
-                          {copiedUpi ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" />
-                              <span>Copied!</span>
-                            </>
-                          ) : (
-                            <>
-                              <Copy className="w-3.5 h-3.5" />
-                              <span>Copy UPI ID</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={handleCopyUpi}
+                            className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                              copiedUpi
+                                ? 'bg-emerald-500 text-black shadow-md shadow-emerald-500/30'
+                                : 'bg-red-600 hover:bg-red-500 text-white shadow-md shadow-red-950/50'
+                            }`}
+                          >
+                            {copiedUpi ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Copy UPI ID</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleDownloadQR}
+                            className="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-500 shadow-sm"
+                            title="Download QR code to phone gallery"
+                          >
+                            <Download className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Download QR</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
 
                     {/* Accepted Payment Badges */}
                     <div>
                       <span className="text-[10px] text-slate-400 font-mono uppercase tracking-wider block mb-1.5">
-                        Accepted UPI Apps:
+                        Accepted Payment Modes (Direct UPI QR & Razorpay):
                       </span>
                       <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 text-[11px] font-bold">
@@ -702,6 +746,10 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
                           BHIM UPI
                         </span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] font-bold">
+                          <CreditCard className="w-3 h-3 text-emerald-400" />
+                          Razorpay / NetBanking
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -710,63 +758,76 @@ export const WalletModal: React.FC<WalletModalProps> = ({
 
               {/* Deposit Form Section */}
               <form onSubmit={handleDepositSubmit} className="space-y-4">
-                {/* 1. Amount Input & Quick Select Chips */}
+                {/* 1. Amount Input & Quick Select Chips (Range: ₹1 to ₹5,000) */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                       Amount to Add (₹)
                     </label>
-                    <span className="text-[10px] text-slate-500 font-mono">Min ₹20 • Max ₹10,000</span>
+                    <span className="text-[10px] text-amber-400 font-mono font-bold">Min ₹1 • Max ₹5,000</span>
                   </div>
                   <div className="relative mb-2.5">
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-red-400 font-mono font-bold text-base">₹</span>
                     <input
                       type="number"
-                      placeholder="Enter amount to deposit"
+                      placeholder="Enter amount between ₹1 and ₹5,000"
                       value={customAmount}
                       onChange={(e) => {
-                        setCustomAmount(e.target.value);
-                        setDepositError(null);
+                        const val = e.target.value;
+                        setCustomAmount(val);
+                        const num = parseFloat(val);
+                        if (val !== '' && (isNaN(num) || num < 1 || num > 5000)) {
+                          setDepositError('Deposit amount must be between ₹1 and ₹5,000');
+                        } else {
+                          setDepositError(null);
+                        }
                       }}
-                      min={20}
-                      max={10000}
+                      onBlur={() => {
+                        const num = parseFloat(customAmount);
+                        if (!customAmount || isNaN(num) || num < 1 || num > 5000) {
+                          setDepositError('Deposit amount must be between ₹1 and ₹5,000');
+                        }
+                      }}
+                      min={1}
+                      max={5000}
                       required
-                      className="w-full h-12 pl-8 pr-4 rounded-xl bg-[#06070a] border border-red-950/80 text-white placeholder-slate-500 text-sm font-mono focus:outline-none focus:border-red-500 shadow-inner"
+                      className={`w-full h-12 pl-8 pr-4 rounded-xl bg-[#06070a] border text-white placeholder-slate-500 text-sm font-mono focus:outline-none shadow-inner ${
+                        depositError && depositError.includes('between ₹1 and ₹5,000')
+                          ? 'border-red-500 focus:border-red-400'
+                          : 'border-red-950/80 focus:border-red-500'
+                      }`}
                     />
                   </div>
 
-                  {/* Fast Deposit Chips */}
-                  <div className="grid grid-cols-4 gap-2">
-                    {[
-                      { label: '₹20', value: 20 },
-                      { label: '₹50', value: 50 },
-                      { label: '₹100', value: 100 },
-                      { label: '₹200', value: 200 },
-                      { label: '₹500', value: 500 },
-                      { label: '₹1,000', value: 1000 },
-                      { label: '₹2,000', value: 2000 },
-                      { label: '₹5,000', value: 5000 },
-                    ].map((chip) => {
-                      const isSelected = currentEffectiveDepositAmount === chip.value;
-                      return (
-                        <button
-                          key={chip.value}
-                          type="button"
-                          onClick={() => {
-                            setCustomAmount(chip.value.toString());
-                            setDepositAmount(chip.value);
-                            setDepositError(null);
-                          }}
-                          className={`py-2 px-1 rounded-xl font-mono font-bold text-xs transition-all cursor-pointer border flex items-center justify-center ${
-                            isSelected
-                              ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white border-red-500 shadow-md shadow-red-950/60 scale-102'
-                              : 'bg-[#06070a] border-red-950/70 text-slate-300 hover:border-red-800 hover:text-white'
-                          }`}
-                        >
-                          {chip.label}
-                        </button>
-                      );
-                    })}
+                  {/* Quick Amount Selection Chips: [+ ₹10] [+ ₹20] [+ ₹50] [+ ₹100] [+ ₹500] [+ ₹1000] */}
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-amber-400 font-bold">
+                        <Zap className="w-3.5 h-3.5 fill-amber-400" /> Quick Amount Selection Chips
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">Tap chip to add amount</span>
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                      {[
+                        { label: '+ ₹10', value: 10 },
+                        { label: '+ ₹20', value: 20 },
+                        { label: '+ ₹50', value: 50 },
+                        { label: '+ ₹100', value: 100 },
+                        { label: '+ ₹500', value: 500 },
+                        { label: '+ ₹1000', value: 1000 },
+                      ].map((chip) => {
+                        return (
+                          <button
+                            key={chip.label}
+                            type="button"
+                            onClick={() => handleAddQuickChip(chip.value)}
+                            className="py-2.5 px-1 rounded-xl font-mono font-bold text-xs transition-all cursor-pointer border bg-[#06070a] border-red-950/80 text-amber-300 hover:border-red-500 hover:bg-red-950/40 hover:text-white active:scale-95 flex items-center justify-center gap-1 shadow-sm"
+                          >
+                            <span>{chip.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
@@ -799,7 +860,7 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 {/* 3. Screenshot Upload (Payment Proof) */}
                 <div>
                   <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block mb-1.5">
-                    Upload Payment Screenshot (Proof)
+                    Upload Payment Screenshot (Optional Proof)
                   </label>
 
                   {screenshotData ? (
@@ -843,14 +904,14 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 {/* Submit Action Button */}
                 <button
                   type="submit"
-                  disabled={depositSubmitting || currentEffectiveDepositAmount < 20 || !utrNumber.trim()}
+                  disabled={depositSubmitting || currentEffectiveDepositAmount < 1 || currentEffectiveDepositAmount > 5000 || !utrNumber.trim()}
                   className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:from-red-500 hover:to-rose-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-red-950/80 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 border border-red-500/40 mt-2"
                 >
                   <Lock className="w-4 h-4 text-white" />
                   <span>
                     {depositSubmitting
                       ? 'Submitting Proof...'
-                      : `Submit Payment Proof (₹${currentEffectiveDepositAmount})`}
+                      : `Submit Payment Proof (₹${currentEffectiveDepositAmount || 0})`}
                   </span>
                 </button>
               </form>

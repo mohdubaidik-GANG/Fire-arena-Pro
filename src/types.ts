@@ -10,6 +10,8 @@ export interface UserProfile {
   matchesPlayed?: number;
   tournamentsWon?: number;
   depositBalance: number;
+  walletBalance?: number;
+  wallet_balance?: number;
   winningBalance?: number;
   winningsBalance: number;
   referralCode?: string;
@@ -116,14 +118,15 @@ export interface DepositRequest {
   userEmail: string;
   userIgn: string;
   amount: number;
+  utr?: string; // 12-digit UTR reference number
   utrNumber?: string; // 12-digit UPI reference number
   orderId?: string;
   gateway?: string;
   screenshotUrl?: string; // payment proof image data URL or URL
   proofUrl?: string; // payment screenshot or receipt note
-  status: 'pending' | 'approved' | 'rejected' | 'COMPLETED' | 'PENDING';
+  status: 'pending' | 'approved' | 'rejected' | 'COMPLETED' | 'PENDING' | 'APPROVED' | 'REJECTED';
   adminNote?: string;
-  createdAt: string;
+  createdAt: string | any;
   reviewedAt?: string;
 }
 

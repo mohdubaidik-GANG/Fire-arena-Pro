@@ -5,9 +5,10 @@ interface QrCodeCanvasProps {
   value: string;
   size?: number;
   className?: string;
+  canvasId?: string;
 }
 
-export const QrCodeCanvas: React.FC<QrCodeCanvasProps> = ({ value, size = 220, className = '' }) => {
+export const QrCodeCanvas: React.FC<QrCodeCanvasProps> = ({ value, size = 220, className = '', canvasId = 'upi-payment-qr-canvas' }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -35,7 +36,7 @@ export const QrCodeCanvas: React.FC<QrCodeCanvasProps> = ({ value, size = 220, c
 
   return (
     <div className={`p-3 bg-white rounded-xl shadow-lg border-2 border-amber-500/40 inline-flex items-center justify-center ${className}`}>
-      <canvas ref={canvasRef} width={size} height={size} className="block rounded-lg" />
+      <canvas ref={canvasRef} id={canvasId} width={size} height={size} className="block rounded-lg" />
     </div>
   );
 };

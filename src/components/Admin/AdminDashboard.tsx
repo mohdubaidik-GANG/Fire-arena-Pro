@@ -45,7 +45,8 @@ import {
   writeBatch,
   increment,
   orderBy,
-  limit
+  limit,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -341,14 +342,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           reviewedAt: new Date().toISOString(),
         });
 
+        // Add entry to transactions collection with type 'DEPOSIT'
+        const globalTxnRef = doc(collection(db, 'transactions'));
+        transaction.set(globalTxnRef, {
+          userId: dep.userId,
+          userEmail: dep.userEmail || '',
+          userIgn: dep.userIgn || 'Player',
+          amount: dep.amount,
+          type: 'DEPOSIT',
+          utr: dep.utr || dep.utrNumber || '',
+          status: 'SUCCESS',
+          createdAt: serverTimestamp(),
+          timestamp: new Date().toISOString(),
+        });
+
         // Add ledger record to user's transactions passbook
         const txnRef = doc(collection(db, 'users', dep.userId, 'transactions'));
         transaction.set(txnRef, {
           type: 'DEPOSIT',
           amount: dep.amount,
-          orderId: dep.utrNumber || dep.id,
+          orderId: dep.utr || dep.utrNumber || dep.id,
           status: 'SUCCESS',
-          note: `Deposit Approved (UTR: ${dep.utrNumber || 'Direct UPI'})`,
+          note: `Deposit Approved (UTR: ${dep.utr || dep.utrNumber || 'Direct UPI'})`,
           timestamp: new Date().toISOString(),
         });
 
@@ -356,7 +371,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         const notifRef = doc(collection(db, 'users', dep.userId, 'notifications'));
         transaction.set(notifRef, {
           title: '🪙 Deposit Approved!',
-          message: `₹${dep.amount} has been added directly to your wallet balance. UTR: ${dep.utrNumber || 'N/A'}`,
+          message: `₹${dep.amount} has been added directly to your wallet balance. UTR: ${dep.utr || dep.utrNumber || 'N/A'}`,
           category: 'WALLET',
           createdAt: new Date().toISOString(),
         });
@@ -1077,7 +1092,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       <div className="flex items-center gap-3">
                         <span className="text-lg font-extrabold font-mono text-white">₹{dep.amount}</span>
                         <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-black/60 border border-slate-800 text-amber-400">
-                          UTR: {dep.utrNumber}
+                          UTR: {dep.utr || dep.utrNumber || 'N/A'}
                         </span>
                         <span
                           className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded font-bold ${
@@ -1097,7 +1112,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         <span>·</span>
                         <span>Email: <strong className="text-slate-300 font-mono">{dep.userEmail || 'N/A'}</strong></span>
                         <span>·</span>
-                        <span>Time: {dep.createdAt ? new Date(dep.createdAt).toLocaleString() : 'Recent'}</span>
+                        <span>Time: {dep.createdAt ? (typeof dep.createdAt === 'object' && typeof dep.createdAt.toDate === 'function' ? dep.createdAt.toDate().toLocaleString() : new Date(dep.createdAt).toLocaleString()) : 'Recent'}</span>
                       </div>
 
                       {/* Payment Proof Image Preview */}

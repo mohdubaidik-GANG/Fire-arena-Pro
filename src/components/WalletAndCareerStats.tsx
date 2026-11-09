@@ -276,7 +276,7 @@ export const WalletAndCareerStats: React.FC<WalletAndCareerStatsProps> = ({
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
-                        Txn: {dep.orderId || dep.utrNumber || 'N/A'} · {new Date(dep.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        Txn: {dep.utr || dep.utrNumber || dep.orderId || 'N/A'} · {dep.createdAt ? (typeof dep.createdAt === 'object' && typeof dep.createdAt.toDate === 'function' ? dep.createdAt.toDate().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : new Date(dep.createdAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })) : 'Recent'}
                       </span>
                     </div>
                   </div>
