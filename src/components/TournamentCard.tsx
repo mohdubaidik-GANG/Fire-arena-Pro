@@ -42,7 +42,9 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
   const [copiedPass, setCopiedPass] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
 
-  const currentJoined = tournament.joinedPlayers ? tournament.joinedPlayers.length : 0;
+  const currentJoined = typeof tournament.joinedSlots === 'number'
+    ? tournament.joinedSlots
+    : (tournament.joinedPlayers ? tournament.joinedPlayers.length : Number(tournament.registeredCount) || 0);
   const isRegisteredInList = Boolean(user?.uid && tournament.joinedPlayers?.some((p) => p.uid === user.uid));
   const isJoined = Boolean(userRegistration || isRegisteredInList);
   const isFull = currentJoined >= tournament.maxSlots;

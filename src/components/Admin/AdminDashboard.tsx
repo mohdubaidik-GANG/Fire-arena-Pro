@@ -109,6 +109,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [notifTitle, setNotifTitle] = useState('');
   const [notifMessage, setNotifMessage] = useState('');
   const [notifCategory, setNotifCategory] = useState<NotificationCategory>('ANNOUNCEMENT');
+  const [notifTarget, setNotifTarget] = useState<'ALL' | 'MATCH'>('ALL');
+  const [notifSelectedMatchId, setNotifSelectedMatchId] = useState('');
   const [notifRoomId, setNotifRoomId] = useState('');
   const [notifRoomPass, setNotifRoomPass] = useState('');
   const [isSendingNotif, setIsSendingNotif] = useState(false);
@@ -147,21 +149,89 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       showToast('Please enter both title and message.', 'error');
       return;
     }
+    if (notifTarget === 'MATCH' && !notifSelectedMatchId) {
+      showToast('Please select a target match.', 'error');
+      return;
+    }
     setIsSendingNotif(true);
     try {
+      const trimmedTitle = notifTitle.trim();
+      const trimmedMsg = notifMessage.trim();
+      const rId = notifRoomId.trim() || null;
+      const rPass = notifRoomPass.trim() || null;
+      const targetMatch = notifTarget === 'MATCH' ? tournaments.find((t) => t.id === notifSelectedMatchId) : null;
+
+      // 1. Save to root notifications collection for real-time player alert
+      if (notifTarget === 'MATCH' && targetMatch) {
+        const joined = targetMatch.joinedPlayers || [];
+        if (joined.length > 0) {
+          const promises = joined.map((player) =>
+            addDoc(collection(db, 'notifications'), {
+              userId: player.uid,
+              title: trimmedTitle,
+              message: trimmedMsg,
+              matchId: targetMatch.id,
+              tournamentId: targetMatch.id,
+              matchTitle: targetMatch.title,
+              type: rId && rPass ? 'ROOM_CREDENTIALS' : 'BROADCAST',
+              category: notifCategory,
+              roomId: rId,
+              roomPassword: rPass,
+              read: false,
+              createdAt: serverTimestamp(),
+            }).catch((err) => console.warn('Error pushing match player alert:', err))
+          );
+          await Promise.allSettled(promises);
+        }
+
+        // Also push a record with matchId for all
+        await addDoc(collection(db, 'notifications'), {
+          userId: 'ALL',
+          title: trimmedTitle,
+          message: trimmedMsg,
+          matchId: targetMatch.id,
+          tournamentId: targetMatch.id,
+          matchTitle: targetMatch.title,
+          type: rId && rPass ? 'ROOM_CREDENTIALS' : 'BROADCAST',
+          category: notifCategory,
+          roomId: rId,
+          roomPassword: rPass,
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } else {
+        // Global push for all users
+        await addDoc(collection(db, 'notifications'), {
+          userId: 'ALL',
+          title: trimmedTitle,
+          message: trimmedMsg,
+          matchId: null,
+          type: rId && rPass ? 'ROOM_CREDENTIALS' : 'BROADCAST',
+          category: notifCategory,
+          roomId: rId,
+          roomPassword: rPass,
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      }
+
+      // 2. Also save to legacy broadcast_notifications collection
       await addDoc(collection(db, 'broadcast_notifications'), {
-        title: notifTitle.trim(),
-        message: notifMessage.trim(),
+        title: trimmedTitle,
+        message: trimmedMsg,
         category: notifCategory,
-        roomId: notifRoomId.trim() || null,
-        roomPassword: notifRoomPass.trim() || null,
+        roomId: rId,
+        roomPassword: rPass,
+        matchId: targetMatch?.id || null,
         createdAt: new Date().toISOString(),
       });
-      showToast('Broadcast notification successfully sent to all players!', 'success');
+
+      showToast(`Global alert sent successfully to ${notifTarget === 'ALL' ? 'all users' : 'match players'}!`, 'success');
       setNotifTitle('');
       setNotifMessage('');
       setNotifRoomId('');
       setNotifRoomPass('');
+      setNotifSelectedMatchId('');
     } catch (err: unknown) {
       showToast(`Failed to send broadcast: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
@@ -226,7 +296,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
             ...data,
             joinedPlayers: joinedList,
-            registeredCount: joinedList.length || Number(data.registeredCount) || 0,
+            joinedSlots: typeof data.joinedSlots === 'number' ? data.joinedSlots : (joinedList.length || Number(data.registeredCount) || 0),
+            registeredCount: typeof data.joinedSlots === 'number' ? data.joinedSlots : (joinedList.length || Number(data.registeredCount) || 0),
           } as unknown as Tournament);
         });
 
@@ -447,145 +518,112 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  // Cancel and Delete Tournament with Automated Player Refunds
-  const handleCancelAndDeleteTournament = async (t: Tournament) => {
-    const currentJoined = t.joinedPlayers ? t.joinedPlayers.length : (t.registeredCount || 0);
-    const confirmationText =
-      `Are you sure you want to cancel and delete this tournament: "${t.title}"?\n\n` +
-      (currentJoined > 0
-        ? `AUTOMATED REFUND NOTICE: ${currentJoined} registered player(s) will immediately receive an automated refund of their ₹${t.entryFee} entry fee into their Deposit Wallet!`
-        : `This match room will be permanently removed from the arena.`);
+  // Automated Wallet Refund and Match Cancellation / Deletion using atomic writeBatch
+  const handleCancelAndRefundMatch = async (match: Tournament, actionType: 'cancel' | 'delete' = 'cancel', skipConfirm = false) => {
+    const joinedList = Array.isArray(match.joinedPlayers) ? match.joinedPlayers : [];
+    const joinedCount = joinedList.length;
+    const entryFee = Number(match.entryFee) || 0;
 
-    if (!confirm(confirmationText)) {
-      return;
-    }
+    if (!skipConfirm) {
+      const confirmPrompt = joinedCount > 0
+        ? `⚠️ ${actionType === 'cancel' ? 'CANCEL' : 'DELETE'} MATCH: "${match.title}"?\n\nAUTOMATIC REFUND: All ${joinedCount} joined player(s) will immediately receive their ₹${entryFee} entry fee back to their wallet balance!`
+        : `Are you sure you want to permanently ${actionType === 'cancel' ? 'cancel' : 'delete'} match: "${match.title}"?`;
 
-    try {
-      // 1. Fetch all registered players from subcollection
-      const regsRef = collection(db, `tournaments/${t.id}/registrations`);
-      const regsSnap = await getDocs(regsRef);
-      const registrations = regsSnap.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      })) as { id: string; userId: string; userIgn?: string; entryFeePaid?: number }[];
-
-      // Collect all user IDs to refund (from subcollection AND from joinedPlayers array)
-      const userRefundMap = new Map<string, number>();
-      registrations.forEach((r) => {
-        if (r.userId) {
-          userRefundMap.set(r.userId, r.entryFeePaid || t.entryFee || 0);
-        }
-      });
-      if (Array.isArray(t.joinedPlayers)) {
-        t.joinedPlayers.forEach((p) => {
-          if (p.uid && !userRefundMap.has(p.uid)) {
-            userRefundMap.set(p.uid, t.entryFee || 0);
-          }
-        });
-      }
-
-      let refundedUsersCount = 0;
-      let totalRefundedAmount = 0;
-
-      // 2. Perform atomic refund and tournament deletion in a Firestore transaction
-      await runTransaction(db, async (transaction) => {
-        // Refund each registered player
-        for (const [userId, refundAmount] of userRefundMap.entries()) {
-          if (refundAmount > 0) {
-            const userRef = doc(db, 'users', userId);
-            const userSnap = await transaction.get(userRef);
-
-            if (userSnap.exists()) {
-              const currentDeposit = userSnap.data()?.depositBalance || 0;
-              transaction.update(userRef, {
-                depositBalance: currentDeposit + refundAmount,
-                updatedAt: new Date().toISOString(),
-              });
-              refundedUsersCount++;
-              totalRefundedAmount += refundAmount;
-            }
-          }
-        }
-
-        // Delete subcollection registration docs
-        for (const reg of registrations) {
-          const regDocRef = doc(db, `tournaments/${t.id}/registrations`, reg.id);
-          transaction.delete(regDocRef);
-        }
-
-        // Delete the tournament document from Firestore (tournaments and matches)
-        const tourRef = doc(db, 'tournaments', t.id);
-        transaction.delete(tourRef);
-        const matchRef = doc(db, 'matches', t.id);
-        transaction.delete(matchRef);
-      });
-
-      // Immediately update local UI state to remove deleted match without requiring refresh
-      tourneysMapRef.current.delete(t.id);
-      matchesMapRef.current.delete(t.id);
-      setTournaments((prev) => prev.filter((m) => m.id !== t.id));
-
-      showToast(
-        refundedUsersCount > 0
-          ? `Tournament "${t.title}" cancelled! Refunded ${refundedUsersCount} players (₹${totalRefundedAmount}).`
-          : `Tournament "${t.title}" deleted and removed from screens.`,
-        'success'
-      );
-    } catch (err: unknown) {
-      console.error('Error cancelling and deleting tournament:', err);
-      showToast(`Failed to cancel tournament: ${err instanceof Error ? err.message : String(err)}`, 'error');
-    }
-  };
-
-  // Direct Client-Side Match Deletion with Instant Optimistic UI Update (Strictly Client SDK, Zero Fetch)
-  const handleDeleteMatch = async (matchId: string, skipPrompt = false) => {
-    let confirmed = skipPrompt;
-    if (!confirmed) {
-      try {
-        confirmed = window.confirm("Are you sure you want to permanently delete this tournament match?");
-      } catch {
-        // Fallback to in-app confirmation modal if window.confirm cannot be shown
-        const target = tournaments.find((t) => t.id === matchId);
-        setMatchToDelete({ id: matchId, title: target?.title || 'Tournament Match' });
+      if (!confirm(confirmPrompt)) {
         return;
       }
     }
 
-    if (!confirmed) return;
-
     setDeleteLoading(true);
 
-    // 1. Optimistic UI update: Remove immediately from screen
-    tourneysMapRef.current.delete(matchId);
-    matchesMapRef.current.delete(matchId);
-    setTournaments((prev) => prev.filter((m) => m.id !== matchId));
-    setMatchToDelete(null);
-
-    // Also purge from App cached_tournaments so it never reappears on reload
     try {
-      const cached = localStorage.getItem('cached_tournaments');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          const updated = parsed.filter((m: any) => m.id !== matchId);
-          localStorage.setItem('cached_tournaments', JSON.stringify(updated));
+      if (joinedCount > 0 && entryFee > 0) {
+        // Atomic batch write to refund each player and log refund transaction
+        const batch = writeBatch(db);
+        for (const player of joinedList) {
+          if (!player.uid) continue;
+          const userRef = doc(db, 'users', player.uid);
+          batch.update(userRef, {
+            walletBalance: increment(entryFee),
+            wallet_balance: increment(entryFee),
+            depositBalance: increment(entryFee),
+            updatedAt: new Date().toISOString(),
+          });
+          const refundTxRef = doc(collection(db, 'transactions'));
+          batch.set(refundTxRef, {
+            userId: player.uid,
+            amount: entryFee,
+            type: 'REFUND',
+            description: `Refund for cancelled match: ${match.title}`,
+            createdAt: serverTimestamp(),
+          });
+          // Also dispatch in-app notification to player
+          const notifRef = doc(collection(db, 'notifications'));
+          batch.set(notifRef, {
+            userId: player.uid,
+            title: '🪙 Match Refund Credited',
+            message: `₹${entryFee} refunded to your wallet for cancelled match: ${match.title}.`,
+            type: 'WALLET_APPROVAL',
+            category: 'WALLET',
+            read: false,
+            createdAt: serverTimestamp(),
+          });
         }
+        batch.delete(doc(db, 'matches', match.id));
+        batch.delete(doc(db, 'tournaments', match.id));
+        await batch.commit();
+
+        // Also clean up subcollection registrations if any exist
+        try {
+          const regsSnap = await getDocs(collection(db, `tournaments/${match.id}/registrations`));
+          if (!regsSnap.empty) {
+            const regBatch = writeBatch(db);
+            regsSnap.docs.forEach((d) => regBatch.delete(d.ref));
+            await regBatch.commit();
+          }
+        } catch {}
+
+        const confirmMsg = `Match cancelled. ₹${entryFee} refunded to all ${joinedCount} players.`;
+        alert(confirmMsg);
+        showToast(confirmMsg, 'success');
+      } else {
+        // 0 joined players: direct batch deletion
+        const batch = writeBatch(db);
+        batch.delete(doc(db, 'matches', match.id));
+        batch.delete(doc(db, 'tournaments', match.id));
+        await batch.commit();
+
+        showToast(`Match "${match.title}" deleted from arena.`, 'success');
       }
-    } catch {}
 
-    try {
-      // 2. Pure direct client-side deletion using Firebase SDK without any fetch API
-      await Promise.allSettled([
-        deleteDoc(doc(db, "matches", matchId)),
-        deleteDoc(doc(db, "tournaments", matchId))
-      ]);
+      // Optimistic UI state removal
+      tourneysMapRef.current.delete(match.id);
+      matchesMapRef.current.delete(match.id);
+      setTournaments((prev) => prev.filter((m) => m.id !== match.id));
+      setMatchToDelete(null);
 
-      showToast("Tournament match permanently deleted from database!", "success");
+      try {
+        localStorage.removeItem('cached_tournaments');
+      } catch {}
     } catch (err: unknown) {
-      console.warn("Delete match warning:", err);
-      showToast("Match removed.", "success");
+      console.error('Match cancel/delete error:', err);
+      showToast(`Failed to ${actionType} match: ${err instanceof Error ? err.message : String(err)}`, 'error');
     } finally {
       setDeleteLoading(false);
+    }
+  };
+
+  // Backwards-compatible aliases
+  const handleCancelAndDeleteTournament = (t: Tournament) => handleCancelAndRefundMatch(t, 'cancel');
+  const handleDeleteMatch = (matchId: string, skipPrompt = false) => {
+    const target = tournaments.find((t) => t.id === matchId);
+    if (target) {
+      handleCancelAndRefundMatch(target, 'delete', skipPrompt);
+    } else {
+      deleteDoc(doc(db, 'matches', matchId)).catch(() => {});
+      deleteDoc(doc(db, 'tournaments', matchId)).catch(() => {});
+      setTournaments((prev) => prev.filter((m) => m.id !== matchId));
+      setMatchToDelete(null);
     }
   };
 
@@ -1019,26 +1057,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       </div>
 
                       {/* Match Deletion Actions */}
+                      {/* Match Deletion & Cancellation Actions */}
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => handleDeleteMatch(t.id)}
-                          className="flex-1 h-8 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          onClick={() => handleCancelAndRefundMatch(t, 'cancel')}
+                          className="flex-1 h-8 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          title="Cancel match and automatically refund entry fees to all joined players"
+                        >
+                          <Ban className="w-3.5 h-3.5 text-amber-400" />
+                          <span>
+                            {Array.isArray(t.joinedPlayers) && t.joinedPlayers.length > 0
+                              ? `Cancel & Refund (₹${t.entryFee} × ${t.joinedPlayers.length})`
+                              : 'Cancel Match'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCancelAndRefundMatch(t, 'delete')}
+                          className="h-8 px-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                           title="Permanently delete this match from database"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                          <span>🗑️ Delete Match</span>
+                          <span>Delete</span>
                         </button>
-                        {Array.isArray(t.joinedPlayers) && t.joinedPlayers.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => handleCancelAndDeleteTournament(t)}
-                            className="h-8 px-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
-                            title="Refund registered players and cancel match"
-                          >
-                            <span>Refund & Cancel ({t.joinedPlayers.length})</span>
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1515,6 +1557,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 </div>
 
                 <form onSubmit={handleSendBroadcast} className="space-y-3.5 text-xs">
+                  {/* Target Selector */}
+                  <div>
+                    <label className="block text-slate-300 font-bold uppercase text-[10px] tracking-wider mb-1">
+                      Audience Target <span className="text-red-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNotifTarget('ALL')}
+                        className={`py-2 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border text-center ${
+                          notifTarget === 'ALL'
+                            ? 'bg-gradient-to-r from-red-600 to-rose-700 border-red-500 text-white shadow-md shadow-red-600/30'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        All Users
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNotifTarget('MATCH')}
+                        className={`py-2 px-3 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer border text-center ${
+                          notifTarget === 'MATCH'
+                            ? 'bg-gradient-to-r from-amber-600 to-amber-700 border-amber-500 text-white shadow-md shadow-amber-600/30'
+                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Specific Match Joined
+                      </button>
+                    </div>
+
+                    {notifTarget === 'MATCH' && (
+                      <div className="mt-2.5">
+                        <label className="block text-amber-400 font-bold uppercase text-[9px] tracking-wider mb-1">
+                          Select Tournament Match <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={notifSelectedMatchId}
+                          onChange={(e) => setNotifSelectedMatchId(e.target.value)}
+                          required
+                          className="w-full h-10 px-3 rounded-xl bg-slate-900 border border-amber-500/50 text-white text-xs focus:outline-none focus:border-amber-400"
+                        >
+                          <option value="">-- Choose active tournament --</option>
+                          {tournaments.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.title} ({t.category} · {t.registeredCount}/{t.maxSlots} slots)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
                   <div>
                     <label className="block text-slate-300 font-bold uppercase text-[10px] tracking-wider mb-1">
                       Notification Title <span className="text-red-500">*</span>
@@ -1595,10 +1689,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   <button
                     type="submit"
                     disabled={isSendingNotif}
-                    className="w-full h-11 rounded-xl bg-gradient-to-r from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
+                    className="w-full h-11 rounded-xl bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-heading font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50"
                   >
                     <Send className="w-4 h-4" />
-                    <span>{isSendingNotif ? 'Dispatching...' : 'Dispatch Live Broadcast'}</span>
+                    <span>{isSendingNotif ? 'Sending Notification...' : 'Send Notification Now'}</span>
                   </button>
                 </form>
               </div>
@@ -1730,7 +1824,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 Are you sure you want to permanently delete this tournament match?
               </strong>
               <p className="text-slate-400 text-[11px]">
-                This match will be permanently removed from all player screens in real-time and deleted from the database.
+                This match will be permanently removed in real-time. Any registered players will automatically receive a full entry fee refund directly to their wallet balance.
               </p>
             </div>
 
@@ -1835,7 +1929,9 @@ const CreateTournamentModal: React.FC<{ isOpen: boolean; onClose: () => void }> 
         rank2: Number(rank2) || 0,
         maxSlots: Number(maxSlots) || 2,
         startTime: startTime ? String(startTime) : new Date().toISOString(),
-        joinedPlayers: [] as Array<{ uid: string; ign: string; email?: string; joinedAt?: string }>,
+        joinedPlayers: [] as Array<{ uid: string; ign: string; email?: string; slotNumber?: number; joinedAt?: string }>,
+        joinedSlots: 0,
+        registeredCount: 0,
         status: 'UPCOMING',
         roomId: '',
         roomPassword: '',
@@ -2133,7 +2229,41 @@ const EditRoomModal: React.FC<{
       if (trimmedId && trimmedPass) {
         const joinedPlayers = tournament.joinedPlayers || [];
         
-        // Dispatch personal alert to each registered user
+        // Dispatch personal alert to root notifications collection for joined players
+        const rootPlayerPromises = joinedPlayers.map((player) =>
+          addDoc(collection(db, 'notifications'), {
+            userId: player.uid,
+            title: '🚨 ROOM DETAILS OUT!',
+            message: `Match: ${tournament.title}\nRoom ID: ${trimmedId} | Pass: ${trimmedPass}. Join Free Fire now!`,
+            matchId: tournament.id,
+            tournamentId: tournament.id,
+            matchTitle: tournament.title,
+            roomId: trimmedId,
+            roomPassword: trimmedPass,
+            type: 'ROOM_CREDENTIALS',
+            category: 'ROOM_ALERT',
+            read: false,
+            createdAt: serverTimestamp(),
+          }).catch((err) => console.warn('Root player notification error:', err))
+        );
+
+        // Also push a root notification for ALL so joined players who fetch broadcast records get it
+        const rootBroadcastPromise = addDoc(collection(db, 'notifications'), {
+          userId: 'ALL',
+          title: `🚨 ROOM DETAILS OUT: ${tournament.title}`,
+          message: `Room ID: ${trimmedId} | Pass: ${trimmedPass}. Join Free Fire now!`,
+          matchId: tournament.id,
+          tournamentId: tournament.id,
+          matchTitle: tournament.title,
+          roomId: trimmedId,
+          roomPassword: trimmedPass,
+          type: 'ROOM_CREDENTIALS',
+          category: 'ROOM_ALERT',
+          read: false,
+          createdAt: serverTimestamp(),
+        }).catch((err) => console.warn('Root broadcast notification error:', err));
+
+        // Legacy subcollection support
         const userAlertPromises = joinedPlayers.map((player) =>
           addDoc(collection(db, 'users', player.uid, 'notifications'), {
             title: '🚨 ROOM ID & PASS RELEASED!',
@@ -2159,7 +2289,7 @@ const EditRoomModal: React.FC<{
           createdAt: new Date().toISOString(),
         }).catch((err) => console.warn('Broadcast notification error:', err));
 
-        await Promise.allSettled([...userAlertPromises, broadcastPromise]);
+        await Promise.allSettled([...rootPlayerPromises, rootBroadcastPromise, ...userAlertPromises, broadcastPromise]);
       }
 
       onSuccess?.(`Room ID (${trimmedId}) & Password published! Live notifications dispatched.`);

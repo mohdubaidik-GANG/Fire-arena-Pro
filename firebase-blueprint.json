@@ -186,6 +186,10 @@
     }
   },
   "firestore": {
+    "/notifications/{notifId}": {
+      "schema": "appNotification",
+      "description": "Root notifications collection for room details, match reminders, approvals, and broadcasts"
+    },
     "/broadcast_notifications/{notificationId}": {
       "schema": "appNotification",
       "description": "Global broadcast notifications for all players"

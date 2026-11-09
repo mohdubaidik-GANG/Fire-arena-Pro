@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Flame,
   Trophy,
@@ -40,7 +40,7 @@ import {
   AlertCircle,
   RefreshCw
 } from 'lucide-react';
-import { collection, query, where, limit, onSnapshot, getDocs, getDoc, setDoc, doc, addDoc, updateDoc, increment } from 'firebase/firestore';
+import { collection, query, where, limit, orderBy, onSnapshot, getDocs, getDoc, setDoc, doc, addDoc, updateDoc, increment } from 'firebase/firestore';
 import confetti from 'canvas-confetti';
 import { db } from './firebase';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -299,6 +299,27 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [aboutModalOpen, setAboutModalOpen] = useState(false);
   const [pushNotificationActive, setPushNotificationActive] = useState(true);
   const [copyToast, setCopyToast] = useState<string | null>(null);
+  const [liveBroadcastAlert, setLiveBroadcastAlert] = useState<{ id: string; title: string; message: string } | null>(null);
+
+  // References to prevent duplicate audio alerts
+  const alertedRoomMatchesRef = useRef<Set<string>>(new Set());
+  const initialNotifsLoadedRef = useRef(false);
+  const knownNotifIdsRef = useRef<Set<string>>(new Set());
+
+  // Web Push Notification Permission Request
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission()
+          .then((perm) => {
+            setPushNotificationActive(perm === 'granted');
+          })
+          .catch(() => {});
+      } else {
+        setPushNotificationActive(Notification.permission === 'granted');
+      }
+    }
+  }, [user]);
 
   // Promo Banner Carousel
   const [activeBannerIdx, setActiveBannerIdx] = useState(0);
@@ -323,45 +344,141 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [rankingCategory, setRankingCategory] = useState('ALL');
   const [leaderboardType, setLeaderboardType] = useState<'winnings' | 'kills'>('winnings');
 
-  // Real-time unread notifications counter
+  // Real-time unread notifications counter & audio/vibration/Web Push trigger
   useEffect(() => {
-    let broadcastIds: string[] = [];
-    let userIds: string[] = [];
+    let rootNotifItems: { id: string; userId?: string; type?: string; title?: string; message?: string; roomId?: string; roomPassword?: string; matchId?: string }[] = [];
+    let bcastItems: { id: string; title?: string; message?: string; roomId?: string; roomPassword?: string }[] = [];
+    let userNotifItems: { id: string; title?: string; message?: string; roomId?: string; roomPassword?: string }[] = [];
 
-    const updateUnread = () => {
+    const handleNewIncomingNotification = (notif: { id: string; title?: string; message?: string; roomId?: string; roomPassword?: string; type?: string; matchId?: string; userId?: string }) => {
+      // Audio Ping & Vibration & Web Push
+      if (notif.type === 'ROOM_CREDENTIALS' || (notif.roomId && notif.roomPassword)) {
+        sound.playVictory();
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate([200, 100, 200]);
+          } catch {}
+        }
+        // Native Web Push Alert
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification('🚨 ROOM DETAILS OUT!', {
+              body: `Room ID: ${notif.roomId} | Pass: ${notif.roomPassword}. Join Free Fire now!`,
+              icon: '/logo.png',
+            });
+          } catch {}
+        }
+      } else {
+        sound.playNotification();
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate(150);
+          } catch {}
+        }
+        // Show live broadcast alert banner
+        if (notif.title && notif.message) {
+          setLiveBroadcastAlert({ id: notif.id, title: notif.title, message: notif.message });
+        }
+        // Native Web Push Alert if tab minimized or hidden
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted' && document.hidden) {
+          try {
+            new Notification(notif.title || 'Fire Arena Alert', {
+              body: notif.message || '',
+              icon: '/logo.png',
+            });
+          } catch {}
+        }
+      }
+    };
+
+    const updateAllUnread = () => {
       try {
         const saved = localStorage.getItem('firearena_read_notifications');
         const readSet = saved ? new Set(JSON.parse(saved)) : new Set();
-        const allIds = [...broadcastIds, ...userIds];
-        const unread = allIds.filter((id) => !readSet.has(id)).length;
+
+        const allIds = new Set<string>();
+        rootNotifItems.forEach((n) => {
+          if (n.userId === 'ALL' || !n.userId || n.userId === user?.uid) allIds.add(n.id);
+        });
+        bcastItems.forEach((n) => allIds.add(n.id));
+        userNotifItems.forEach((n) => allIds.add(n.id));
+
+        const unread = Array.from(allIds).filter((id) => !readSet.has(id)).length;
         setUnreadNotifCount(unread);
       } catch {
         setUnreadNotifCount(0);
       }
     };
 
-    const unsubBcast = onSnapshot(
-      collection(db, 'broadcast_notifications'),
+    // 1. Root notifications collection (Room IDs, match reminders, broadcasts)
+    const unsubRoot = onSnapshot(
+      query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(50)),
       (snap) => {
-        broadcastIds = snap.docs.map((d) => d.id);
-        updateUnread();
+        snap.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            const id = change.doc.id;
+            if (initialNotifsLoadedRef.current && !knownNotifIdsRef.current.has(id)) {
+              if (data.userId === 'ALL' || !data.userId || data.userId === user?.uid) {
+                handleNewIncomingNotification({ id, ...data });
+              }
+            }
+            knownNotifIdsRef.current.add(id);
+          }
+        });
+        rootNotifItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        snap.docs.forEach((d) => knownNotifIdsRef.current.add(d.id));
+        initialNotifsLoadedRef.current = true;
+        updateAllUnread();
+      },
+      (err) => console.warn('Root notifications listener note:', err.message)
+    );
+
+    // 2. Broadcast notifications collection
+    const unsubBcast = onSnapshot(
+      query(collection(db, 'broadcast_notifications'), orderBy('createdAt', 'desc'), limit(30)),
+      (snap) => {
+        snap.docChanges().forEach((change) => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            const id = change.doc.id;
+            if (initialNotifsLoadedRef.current && !knownNotifIdsRef.current.has(id)) {
+              handleNewIncomingNotification({ id, ...data, type: 'BROADCAST' });
+            }
+            knownNotifIdsRef.current.add(id);
+          }
+        });
+        bcastItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        updateAllUnread();
       },
       () => {}
     );
 
+    // 3. User notifications collection
     let unsubUser = () => {};
     if (user?.uid) {
       unsubUser = onSnapshot(
-        collection(db, 'users', user.uid, 'notifications'),
+        query(collection(db, 'users', user.uid, 'notifications'), orderBy('createdAt', 'desc'), limit(30)),
         (snap) => {
-          userIds = snap.docs.map((d) => d.id);
-          updateUnread();
+          snap.docChanges().forEach((change) => {
+            if (change.type === 'added') {
+              const data = change.doc.data();
+              const id = change.doc.id;
+              if (initialNotifsLoadedRef.current && !knownNotifIdsRef.current.has(id)) {
+                handleNewIncomingNotification({ id, ...data });
+              }
+              knownNotifIdsRef.current.add(id);
+            }
+          });
+          userNotifItems = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          updateAllUnread();
         },
         () => {}
       );
     }
 
     return () => {
+      unsubRoot();
       unsubBcast();
       unsubUser();
     };
@@ -446,7 +563,8 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
             ...data,
             joinedPlayers: joinedList,
-            registeredCount: joinedList.length || Number(data.registeredCount) || 0,
+            joinedSlots: typeof data.joinedSlots === 'number' ? data.joinedSlots : (joinedList.length || Number(data.registeredCount) || 0),
+            registeredCount: typeof data.joinedSlots === 'number' ? data.joinedSlots : (joinedList.length || Number(data.registeredCount) || 0),
           } as unknown as Tournament);
         });
 
@@ -601,6 +719,30 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
       t.status?.toLowerCase() !== 'cancelled'
   );
 
+  // Trigger prominent audio ping and vibration when user's joined match releases Room ID & Password
+  useEffect(() => {
+    if (activeRoomMatch && activeRoomMatch.roomId && activeRoomMatch.roomPassword) {
+      const key = `${activeRoomMatch.id}-${activeRoomMatch.roomId}-${activeRoomMatch.roomPassword}`;
+      if (!alertedRoomMatchesRef.current.has(key)) {
+        alertedRoomMatchesRef.current.add(key);
+        sound.playVictory();
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          try {
+            navigator.vibrate([200, 100, 200]);
+          } catch {}
+        }
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification('🚨 ROOM DETAILS OUT!', {
+              body: `Room ID: ${activeRoomMatch.roomId} | Pass: ${activeRoomMatch.roomPassword}. Join Free Fire now!`,
+              icon: '/logo.png',
+            });
+          } catch {}
+        }
+      }
+    }
+  }, [activeRoomMatch?.id, activeRoomMatch?.roomId, activeRoomMatch?.roomPassword]);
+
   const handleCopyCredential = (val: string, label: string) => {
     sound.playCopy();
     navigator.clipboard.writeText(val);
@@ -615,6 +757,30 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         <div className="fixed top-16 right-4 z-50 px-4 py-2.5 rounded-xl bg-red-600 text-white font-heading font-bold text-xs shadow-2xl flex items-center gap-2 animate-bounce">
           <Check className="w-4 h-4 stroke-[3]" />
           <span>{copyToast}</span>
+        </div>
+      )}
+
+      {/* Live Global Broadcast Alert Banner */}
+      {liveBroadcastAlert && (
+        <div className="bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white px-4 py-2.5 shadow-xl border-b border-white/20 flex items-center justify-between gap-3 text-xs z-50 sticky top-0 backdrop-blur-md animate-in slide-in-from-top duration-300">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-6 h-6 rounded-lg bg-black/30 flex items-center justify-center shrink-0">
+              <Megaphone className="w-3.5 h-3.5 text-white animate-pulse" />
+            </span>
+            <div className="truncate">
+              <span className="font-black uppercase tracking-wider mr-2">{liveBroadcastAlert.title}:</span>
+              <span className="text-white/90 font-medium">{liveBroadcastAlert.message}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setLiveBroadcastAlert(null);
+            }}
+            className="px-2.5 py-1 bg-black/40 hover:bg-black/60 rounded-md text-[10px] font-bold uppercase tracking-wider shrink-0 cursor-pointer transition-colors"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -635,7 +801,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
               <div>
                 <span className="text-xs font-black font-heading uppercase text-amber-400 tracking-wider block">
-                  🚨 ROOM ID & PASS RELEASED!
+                  🚨 ROOM DETAILS OUT
                 </span>
                 <span className="text-[11px] font-bold text-white truncate block max-w-[220px]">
                   {activeRoomMatch.title}
@@ -654,6 +820,25 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             </button>
           </div>
 
+          {/* Urgent Notification Card Text */}
+          <div className="p-2.5 rounded-xl bg-red-950/40 border border-red-500/40 mb-2.5 text-xs text-red-200 font-bold leading-relaxed flex items-center gap-2">
+            <Flame className="w-4 h-4 text-red-400 shrink-0 animate-bounce" />
+            <span>
+              🚨 ROOM DETAILS OUT: Room ID: <strong className="text-amber-300 font-mono font-black">{activeRoomMatch.roomId}</strong> | Pass: <strong className="text-red-300 font-mono font-black">{activeRoomMatch.roomPassword}</strong>. Join Free Fire now!
+            </span>
+          </div>
+
+          {/* 1-Click Copy ID & Pass Button */}
+          <button
+            type="button"
+            onClick={() => handleCopyCredential(`Room ID: ${activeRoomMatch.roomId} | Pass: ${activeRoomMatch.roomPassword}`, 'Room ID & Pass')}
+            className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 via-amber-400 to-red-500 hover:from-amber-400 hover:to-red-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-500/30 active:scale-[0.98] transition-all cursor-pointer mb-2.5"
+          >
+            <Copy className="w-4 h-4 text-black stroke-[3]" />
+            <span>1-Click Copy ID & Pass</span>
+          </button>
+
+          {/* Separate Individual Copy Chips */}
           <div className="grid grid-cols-2 gap-2 mb-2.5">
             {/* Room ID with 1-tap copy */}
             <div className="bg-black/60 p-2.5 rounded-xl border border-slate-700/80">

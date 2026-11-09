@@ -64,18 +64,26 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     } catch {}
   };
 
-  // Listen to both broadcast_notifications and users/{uid}/notifications
+  // Listen to root notifications, broadcast_notifications and users/{uid}/notifications
   useEffect(() => {
+    let rootNotifs: AppNotification[] = [];
     let broadcasts: AppNotification[] = [];
     let userNotifs: AppNotification[] = [];
 
+    const getTimestampMs = (val: any) => {
+      if (!val) return 0;
+      if (val?.toMillis && typeof val.toMillis === 'function') return val.toMillis();
+      if (val?.toDate && typeof val.toDate === 'function') return val.toDate().getTime();
+      if (val instanceof Date) return val.getTime();
+      const parsed = new Date(val).getTime();
+      return isNaN(parsed) ? 0 : parsed;
+    };
+
     const updateCombined = () => {
-      const combined = [...broadcasts, ...userNotifs];
+      const combined = [...rootNotifs, ...broadcasts, ...userNotifs];
       // Sort newest first
       combined.sort((a, b) => {
-        const timeA = new Date(a.createdAt || 0).getTime();
-        const timeB = new Date(b.createdAt || 0).getTime();
-        return timeB - timeA;
+        return getTimestampMs(b.createdAt) - getTimestampMs(a.createdAt);
       });
       // Deduplicate by ID
       const seen = new Set<string>();
@@ -87,7 +95,33 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       setNotifications(unique);
     };
 
-    // 1. Broadcast notifications
+    // 1. Root notifications collection (Room ID, Password, Broadcasts, Match updates)
+    const rootQuery = query(
+      collection(db, 'notifications'),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+    const unsubRoot = onSnapshot(
+      rootQuery,
+      (snap) => {
+        rootNotifs = snap.docs
+          .map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              ...data,
+              category: data.category || (data.type === 'ROOM_CREDENTIALS' ? 'ROOM_ALERT' : 'ANNOUNCEMENT'),
+            } as AppNotification;
+          })
+          .filter((item) => item.userId === 'ALL' || !item.userId || item.userId === user?.uid);
+        updateCombined();
+      },
+      (err) => {
+        console.warn('Root notifications listener warning:', err.message);
+      }
+    );
+
+    // 2. Broadcast notifications
     const bcastQuery = query(
       collection(db, 'broadcast_notifications'),
       orderBy('createdAt', 'desc'),
@@ -98,6 +132,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       (snap) => {
         broadcasts = snap.docs.map((d) => ({
           id: d.id,
+          category: 'ANNOUNCEMENT',
           ...(d.data() as Omit<AppNotification, 'id'>),
         }));
         updateCombined();
@@ -107,7 +142,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       }
     );
 
-    // 2. User-specific notifications
+    // 3. User-specific notifications
     let unsubUser = () => {};
     if (user?.uid) {
       const userNotifQuery = query(
@@ -132,6 +167,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     }
 
     return () => {
+      unsubRoot();
       unsubBroadcast();
       unsubUser();
     };
@@ -146,6 +182,9 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       } catch (err) {
         console.warn('Could not delete notification:', err);
       }
+      try {
+        await deleteDoc(doc(db, 'notifications', notif.id));
+      } catch {}
     } else {
       // For broadcast notifications, hide locally
       setNotifications((prev) => prev.filter((n) => n.id !== notif.id));
@@ -159,10 +198,17 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const formatTimestamp = (dateStr?: string) => {
-    if (!dateStr) return '';
+  const formatTimestamp = (dateVal?: any) => {
+    if (!dateVal) return '';
     try {
-      const d = new Date(dateStr);
+      let d: Date;
+      if (dateVal?.toDate && typeof dateVal.toDate === 'function') {
+        d = dateVal.toDate();
+      } else if (dateVal instanceof Date) {
+        d = dateVal;
+      } else {
+        d = new Date(dateVal);
+      }
       if (isNaN(d.getTime())) return '';
       const now = new Date();
       const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000);
@@ -175,9 +221,10 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     }
   };
 
-  const getCategoryDetails = (cat: NotificationCategory | string) => {
+  const getCategoryDetails = (cat?: NotificationCategory | string) => {
     switch (cat) {
       case 'ROOM_ALERT':
+      case 'ROOM_CREDENTIALS':
         return {
           label: 'ROOM ALERT',
           badgeClass: 'bg-red-500/20 text-red-400 border-red-500/40',
@@ -307,7 +354,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           ) : (
             filtered.map((item) => {
               const isUnread = !readIds.has(item.id);
-              const cat = getCategoryDetails(item.category);
+              const cat = getCategoryDetails(item.category || item.type);
               const hasRoomCreds = !!(item.roomId && item.roomPassword);
 
               return (
@@ -428,6 +475,28 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                           </button>
                         </div>
                       </div>
+
+                      {/* 1-Click Copy Both ID & Password Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopy(`Room ID: ${item.roomId} | Password: ${item.roomPassword}`, `both-${item.id}`);
+                        }}
+                        className="w-full mt-2.5 py-2 px-3 rounded-lg bg-gradient-to-r from-amber-500 via-amber-400 to-red-500 hover:from-amber-400 hover:to-red-400 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        {copiedId === `both-${item.id}` ? (
+                          <>
+                            <Check className="w-4 h-4 text-black stroke-[3]" />
+                            <span className="font-bold">Copied ID & Pass!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4 text-black stroke-[2.5]" />
+                            <span>1-Click Copy ID & Pass</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   )}
 

@@ -80,6 +80,7 @@ export interface Tournament {
   rank3Prize: number;
   maxSlots: number;
   registeredCount: number;
+  joinedSlots?: number;
   joinedPlayers?: JoinedPlayer[];
   startTime: string; // ISO string
   status: TournamentStatus;
@@ -176,12 +177,15 @@ export interface AppNotification {
   id: string;
   title: string;
   message: string;
-  category: NotificationCategory;
+  category?: NotificationCategory;
+  type?: 'ROOM_CREDENTIALS' | 'BROADCAST' | 'MATCH_REMINDER' | 'WALLET_APPROVAL' | string;
   roomId?: string;
   roomPassword?: string;
   tournamentId?: string;
+  matchId?: string;
   matchTitle?: string;
-  createdAt: string;
+  createdAt: any;
+  read?: boolean;
   isRead?: boolean;
   userId?: string;
   actionUrl?: string;

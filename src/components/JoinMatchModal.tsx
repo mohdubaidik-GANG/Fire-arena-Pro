@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { X, Trophy, Crosshair, AlertCircle, CheckCircle2, ArrowRight, ShieldCheck, Wallet, Grid } from 'lucide-react';
-import { doc, runTransaction, collection, setDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { doc, runTransaction, collection, setDoc, updateDoc, arrayUnion, increment, serverTimestamp } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../context/AuthContext';
 import { Tournament, TournamentRegistration } from '../types';
@@ -55,11 +55,14 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
 
   if (!isOpen || !tournament || !user || !profile) return null;
 
-  const currentJoined = tournament.joinedPlayers ? tournament.joinedPlayers.length : 0;
+  const currentJoined = typeof tournament.joinedSlots === 'number' 
+    ? tournament.joinedSlots 
+    : (tournament.joinedPlayers ? tournament.joinedPlayers.length : Number(tournament.registeredCount) || 0);
   const entryFee = tournament.entryFee;
   const depositBal = profile.depositBalance || 0;
   const winningsBal = profile.winningsBalance || 0;
-  const totalAvailable = depositBal + winningsBal;
+  const walletBal = Number(profile.walletBalance ?? (depositBal + winningsBal));
+  const totalAvailable = walletBal;
 
   const hasEnoughFunds = totalAvailable >= entryFee;
 
@@ -108,22 +111,25 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
         const userSnap = await transaction.get(userRef);
         const userData = userSnap.data();
 
-        const currentDep = userData?.depositBalance || 0;
-        const currentWin = userData?.winningsBalance || 0;
-        const currentTotal = currentDep + currentWin;
+        const currentDep = Number(userData?.depositBalance || 0);
+        const currentWin = Number(userData?.winningsBalance || 0);
+        const currentWallet = Number(userData?.walletBalance ?? (currentDep + currentWin));
 
-        if (currentTotal < entryFee) {
-          throw new Error('Insufficient balance to pay tournament entry fee.');
+        if (currentWallet < entryFee) {
+          throw new Error(`Insufficient wallet balance. You need ₹${entryFee} to join this match.`);
         }
 
         // Deduct from deposit balance first, remainder from winnings balance
         let deductDep = Math.min(currentDep, entryFee);
         let deductWin = entryFee - deductDep;
 
-        const newDepositBal = currentDep - deductDep;
-        const newWinningsBal = currentWin - deductWin;
+        const newDepositBal = Math.max(0, currentDep - deductDep);
+        const newWinningsBal = Math.max(0, currentWin - deductWin);
+        const newWalletBal = Math.max(0, currentWallet - entryFee);
 
         transaction.update(userRef, {
+          walletBalance: newWalletBal,
+          wallet_balance: newWalletBal,
           depositBalance: newDepositBal,
           winningsBalance: newWinningsBal,
           updatedAt: new Date().toISOString(),
@@ -139,21 +145,24 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
         joinedAt: new Date().toISOString(),
       };
 
-      // 1. Realtime Firestore Tracking: Update 'matches' document using arrayUnion
+      // 1. Realtime Firestore Tracking: Update 'matches' document with arrayUnion and increment(1)
       try {
         await updateDoc(doc(db, 'matches', tournament.id), {
           joinedPlayers: arrayUnion(playerRecord),
+          joinedSlots: increment(1),
+          registeredCount: increment(1),
           updatedAt: new Date().toISOString(),
         });
       } catch (matchErr) {
         console.warn('Match doc arrayUnion note:', matchErr);
       }
 
-      // 2. Also update 'tournaments' document using arrayUnion and updated registeredCount
+      // 2. Also update 'tournaments' document using arrayUnion and updated registeredCount/joinedSlots
       try {
         await updateDoc(doc(db, 'tournaments', tournament.id), {
           joinedPlayers: arrayUnion(playerRecord),
-          registeredCount: currentJoined + 1,
+          joinedSlots: increment(1),
+          registeredCount: increment(1),
           updatedAt: new Date().toISOString(),
         });
       } catch (tourErr) {
@@ -178,6 +187,21 @@ export const JoinMatchModal: React.FC<JoinMatchModalProps> = ({
         await setDoc(regRef, newReg);
       } catch (subErr) {
         console.warn('Subcollection registration note:', subErr);
+      }
+
+      // 4. Record ledger transaction for wallet passbook
+      try {
+        const txRef = doc(collection(db, 'transactions'));
+        await setDoc(txRef, {
+          userId: user.uid,
+          amount: entryFee,
+          type: 'MATCH_JOIN',
+          description: `Entry fee for match: ${tournament.title} (Slot #${selectedSlot})`,
+          matchId: tournament.id,
+          createdAt: serverTimestamp(),
+        });
+      } catch (txErr) {
+        console.warn('Transaction record warning:', txErr);
       }
 
       sound.playCoin();
