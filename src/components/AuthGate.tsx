@@ -21,7 +21,8 @@ import {
   MessageCircle,
   ExternalLink,
   ShieldCheck,
-  Gift
+  Gift,
+  Phone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { UserProfile } from '../types';
@@ -29,6 +30,7 @@ import { PWAInstallButton } from './PWAInstallButton';
 
 export const AuthGate: React.FC = () => {
   const {
+    loginWithGoogle,
     loginWithCredentials,
     linkExistingAccountPassword,
     registerWithCredentials,
@@ -47,9 +49,10 @@ export const AuthGate: React.FC = () => {
   const [loginPassword, setLoginPassword] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
 
-  // Register Form States (No Mobile Number - Free Fire IGN, UID, Password, Referral Code)
+  // Register Form States (Free Fire IGN, UID, WhatsApp Phone, Password, Referral Code)
   const [regIgn, setRegIgn] = useState('');
   const [regFreeFireUid, setRegFreeFireUid] = useState('');
+  const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regReferralCode, setRegReferralCode] = useState('');
@@ -86,6 +89,22 @@ export const AuthGate: React.FC = () => {
     }
   };
 
+  // 1b. Handle 1-Click Google Sign In
+  const handleGoogleSignIn = async () => {
+    setErrorMsg(null);
+    setSuccessMsg(null);
+    setIsSubmitting(true);
+    try {
+      await loginWithGoogle();
+      setSuccessMsg('Signed in with Google successfully!');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Google sign-in failed. Please try again.';
+      setErrorMsg(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // 2. Handle Register Submit
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,8 +113,12 @@ export const AuthGate: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      await registerWithCredentials(regIgn, regFreeFireUid, regPassword, regReferralCode);
-      setSuccessMsg('Account registered successfully! Welcome to Fire Arena Pro.');
+      await registerWithCredentials(regIgn, regFreeFireUid, regPassword, regReferralCode, regPhone);
+      if (regReferralCode.trim().toUpperCase() === 'NAWA3773') {
+        setSuccessMsg('Account registered! ₹10 Welcome Bonus has been credited to your wallet via code NAWA3773.');
+      } else {
+        setSuccessMsg('Account registered successfully! Welcome to Fire Arena Pro.');
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Registration failed. Please verify details.';
       setErrorMsg(msg);
@@ -173,6 +196,44 @@ export const AuthGate: React.FC = () => {
             <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed">
               Play Free Fire MAX Custom Rooms · Win Cash Rewards · Fast UPI Payouts
             </p>
+          </div>
+
+          {/* 1-Click Google Sign-In */}
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={isSubmitting || loading}
+              className="w-full h-11 rounded-xl bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs flex items-center justify-center gap-2.5 shadow-md shadow-white/5 transition-all cursor-pointer active:scale-[0.98] disabled:opacity-70"
+            >
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.04h3.88c2.28-2.09 3.66-5.18 3.66-9.14z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.04c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.13C3.26 21.36 7.34 24 12 24z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.28 14.28c-.25-.72-.38-1.49-.38-2.28s.13-1.56.38-2.28V6.59H1.24C.45 8.16 0 9.94 0 12s.45 3.84 1.24 5.41l4.04-3.13z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.24 6.59l4.04 3.13c.95-2.83 3.6-4.97 6.72-4.97z"
+                />
+              </svg>
+              <span>1-Click Continue with Google</span>
+            </button>
+
+            <div className="flex items-center gap-3 my-3">
+              <div className="flex-1 h-px bg-slate-800" />
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">
+                Or With Gamer Account
+              </span>
+              <div className="flex-1 h-px bg-slate-800" />
+            </div>
           </div>
 
           {/* Navigation Tabs: [ Login ] and [ Register ] */}
@@ -333,6 +394,27 @@ export const AuthGate: React.FC = () => {
                 </p>
               </div>
 
+              {/* WhatsApp Phone Number */}
+              <div>
+                <label className="block font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>WhatsApp Phone Number <span className="text-amber-400">*</span></span>
+                  <span className="text-[10px] text-emerald-400 font-normal">SMS / Room Alerts</span>
+                </label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="tel"
+                    value={regPhone}
+                    onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    placeholder="e.g. 9876543210 (10 Digits)"
+                    required
+                    maxLength={10}
+                    className="w-full h-10 pl-10 pr-3 rounded-xl bg-slate-900 border border-slate-800 text-white placeholder-slate-500 text-xs font-mono focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">Used for match updates, Room pass pings & payment verification.</p>
+              </div>
+
               <div>
                 <label className="block font-semibold text-slate-300 mb-1">
                   Account Password (Min 4 Characters) <span className="text-amber-400">*</span>
@@ -364,9 +446,13 @@ export const AuthGate: React.FC = () => {
                   <label className="font-semibold text-slate-300">
                     Referral Code (Optional)
                   </label>
-                  <span className="text-[10px] text-amber-400 font-mono font-bold">
-                    +₹10 Instant Bonus
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRegReferralCode('NAWA3773')}
+                    className="text-[10px] text-amber-400 hover:text-amber-300 font-mono font-bold underline cursor-pointer"
+                  >
+                    Apply 'NAWA3773' (+₹10 Bonus)
+                  </button>
                 </div>
                 <div className="relative">
                   <Gift className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-400" />
@@ -374,14 +460,14 @@ export const AuthGate: React.FC = () => {
                     type="text"
                     value={regReferralCode}
                     onChange={(e) => setRegReferralCode(e.target.value.toUpperCase())}
-                    placeholder="Enter friend's invite code"
+                    placeholder="Enter referral code (e.g. NAWA3773)"
                     maxLength={15}
                     className="w-full h-10 pl-10 pr-3 rounded-xl bg-slate-900 border border-amber-500/30 text-amber-300 placeholder-slate-500 text-xs font-mono uppercase tracking-wider focus:outline-none focus:border-amber-500"
                   />
                 </div>
                 <p className="text-[10px] text-emerald-400 mt-1 font-mono font-semibold flex items-center gap-1">
                   <span>🎁</span>
-                  <span>Dost ka code daalein aur paayein ₹10 instant signup bonus!</span>
+                  <span>Use code <strong>NAWA3773</strong> to get ₹10 instant welcome signup bonus!</span>
                 </p>
               </div>
 

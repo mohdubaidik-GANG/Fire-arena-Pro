@@ -4,6 +4,7 @@ export interface UserProfile {
   ign: string; // Free Fire In-Game Name
   freeFireUid: string; // Free Fire numeric UID
   phone?: string;
+  whatsappNumber?: string;
   password?: string;
   role?: string;
   totalKills?: number;

@@ -53,11 +53,17 @@ export interface AuthContextType {
     ign: string,
     freeFireUid: string,
     password: string,
-    referralCode?: string
+    referralCode?: string,
+    phone?: string
   ) => Promise<void>;
   logout: () => Promise<void>;
-  saveInitialProfile: (ign: string, freeFireUid: string) => Promise<void>;
-  updateProfileDetails: (ign: string, freeFireUid: string) => Promise<void>;
+  saveInitialProfile: (
+    ign: string,
+    freeFireUid: string,
+    phone?: string,
+    referralCode?: string
+  ) => Promise<void>;
+  updateProfileDetails: (ign: string, freeFireUid: string, phone?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -616,12 +622,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     ign: string,
     freeFireUid: string,
     password: string,
-    referralCode?: string
+    referralCode?: string,
+    phone?: string
   ) => {
     setLoading(true);
     const cleanIgn = ign.trim();
     const cleanUid = freeFireUid.trim();
     const cleanPass = password.trim();
+    const cleanPhone = (phone || '').trim();
     const enteredRefCode = (referralCode || '').trim().toUpperCase();
 
     if (!cleanIgn || cleanIgn.length < 2) {
@@ -650,22 +658,34 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         );
       }
 
-      // Check Referral Code if provided
+      // Check Referral Code if provided (Auto-support NAWA3773 for instant ₹10 Welcome Bonus)
       let isReferralValid = false;
       let referrerUid: string | null = null;
       let referrerData: UserProfile | null = null;
 
       if (enteredRefCode) {
-        const refQuery = query(collection(db, 'users'), where('referralCode', '==', enteredRefCode));
-        const refSnap = await getDocs(refQuery);
-        if (refSnap.empty) {
-          setLoading(false);
-          throw new Error("Invalid Referral Code! Check karke dobara daalein ya ise khali chhod dein.");
+        if (enteredRefCode === 'NAWA3773') {
+          isReferralValid = true;
+          try {
+            const refQuery = query(collection(db, 'users'), where('referralCode', '==', 'NAWA3773'));
+            const refSnap = await getDocs(refQuery);
+            if (!refSnap.empty) {
+              referrerUid = refSnap.docs[0].id;
+              referrerData = refSnap.docs[0].data() as UserProfile;
+            }
+          } catch {}
+        } else {
+          const refQuery = query(collection(db, 'users'), where('referralCode', '==', enteredRefCode));
+          const refSnap = await getDocs(refQuery);
+          if (refSnap.empty) {
+            setLoading(false);
+            throw new Error("Invalid Referral Code! Enter 'NAWA3773' to get ₹10 Welcome Bonus or leave empty.");
+          }
+          const referrerDoc = refSnap.docs[0];
+          referrerUid = referrerDoc.id;
+          referrerData = referrerDoc.data() as UserProfile;
+          isReferralValid = true;
         }
-        const referrerDoc = refSnap.docs[0];
-        referrerUid = referrerDoc.id;
-        referrerData = referrerDoc.data() as UserProfile;
-        isReferralValid = true;
       }
 
       // Generate unique referral code for this new user
@@ -683,6 +703,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         email: `${cleanUid}@gamer.firearena`,
         ign: cleanIgn,
         freeFireUid: cleanUid,
+        phone: cleanPhone,
+        whatsappNumber: cleanPhone,
         password: cleanPass,
         referralCode: generatedReferralCode,
         depositBalance: initialDeposit,
@@ -692,7 +714,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         matchesPlayed: 0,
         tournamentsWon: 0,
         totalReferrals: 0,
-        referredBy: isReferralValid ? referrerUid : null,
+        referredBy: isReferralValid ? (referrerUid || enteredRefCode) : null,
         isBanned: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -701,55 +723,58 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await setDoc(doc(db, 'users', newUid), newProfile);
 
       // If valid referral code: reward referrer and log wallet transactions for both
-      if (isReferralValid && referrerUid) {
-        const referrerRef = doc(db, 'users', referrerUid);
-        await updateDoc(referrerRef, {
-          depositBalance: increment(10),
-          totalReferrals: increment(1),
-          updatedAt: new Date().toISOString(),
-        });
+      if (isReferralValid) {
+        if (referrerUid) {
+          const referrerRef = doc(db, 'users', referrerUid);
+          await updateDoc(referrerRef, {
+            depositBalance: increment(10),
+            totalReferrals: increment(1),
+            updatedAt: new Date().toISOString(),
+          }).catch(() => {});
+
+          await addDoc(collection(db, 'walletHistory'), {
+            userId: referrerUid,
+            type: 'REFERRAL_BONUS',
+            description: `Referral Bonus ₹10 (Friend ${cleanIgn} Joined)`,
+            amount: 10,
+            createdAt: new Date().toISOString(),
+          }).catch(() => {});
+
+          await addDoc(collection(db, 'depositRequests'), {
+            userId: referrerUid,
+            userEmail: referrerData?.email || '',
+            userIgn: referrerData?.ign || 'Player',
+            amount: 10,
+            gateway: 'REFERRAL_BONUS',
+            status: 'COMPLETED',
+            orderId: `REF_REWARD_${Date.now()}`,
+            adminNote: `Referral reward for inviting ${cleanIgn} (Code: ${enteredRefCode})`,
+            createdAt: new Date().toISOString(),
+            reviewedAt: new Date().toISOString(),
+          }).catch(() => {});
+        }
 
         // 1. New user wallet history & deposit record
         await addDoc(collection(db, 'walletHistory'), {
           userId: newUid,
           type: 'REFERRAL_BONUS',
-          description: 'Referral Bonus ₹10 (Signup Reward)',
+          description: `Welcome Bonus ₹10 (Referral Code ${enteredRefCode || 'NAWA3773'})`,
           amount: 10,
           createdAt: new Date().toISOString(),
-        });
+        }).catch(() => {});
+
         await addDoc(collection(db, 'depositRequests'), {
           userId: newUid,
           userEmail: newProfile.email,
           userIgn: cleanIgn,
           amount: 10,
-          gateway: 'REFERRAL_BONUS',
+          gateway: 'WELCOME_BONUS',
           status: 'COMPLETED',
           orderId: `REF_WELCOME_${Date.now()}`,
-          adminNote: `Welcome referral bonus via code ${enteredRefCode}`,
+          adminNote: `Welcome referral bonus via code ${enteredRefCode || 'NAWA3773'}`,
           createdAt: new Date().toISOString(),
           reviewedAt: new Date().toISOString(),
-        });
-
-        // 2. Referrer wallet history & deposit record
-        await addDoc(collection(db, 'walletHistory'), {
-          userId: referrerUid,
-          type: 'REFERRAL_BONUS',
-          description: `Referral Bonus ₹10 (Friend ${cleanIgn} Joined)`,
-          amount: 10,
-          createdAt: new Date().toISOString(),
-        });
-        await addDoc(collection(db, 'depositRequests'), {
-          userId: referrerUid,
-          userEmail: referrerData?.email || '',
-          userIgn: referrerData?.ign || 'Player',
-          amount: 10,
-          gateway: 'REFERRAL_BONUS',
-          status: 'COMPLETED',
-          orderId: `REF_REWARD_${Date.now()}`,
-          adminNote: `Referral reward for inviting ${cleanIgn} (Code: ${enteredRefCode})`,
-          createdAt: new Date().toISOString(),
-          reviewedAt: new Date().toISOString(),
-        });
+        }).catch(() => {});
       }
 
       const gamerUser = {
@@ -796,11 +821,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const saveInitialProfile = async (ign: string, freeFireUid: string) => {
+  const saveInitialProfile = async (
+    ign: string,
+    freeFireUid: string,
+    phone?: string,
+    referralCode?: string
+  ) => {
     if (!user) throw new Error('Not authenticated');
 
     const cleanIgn = ign.trim();
     const cleanUid = freeFireUid.trim();
+    const cleanPhone = (phone || '').trim();
+    const enteredRef = (referralCode || '').trim().toUpperCase();
 
     if (!cleanIgn || !cleanUid) {
       throw new Error('Please enter valid Free Fire IGN and UID');
@@ -810,26 +842,67 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const userRef = doc(db, 'users', user.uid);
       const userSnap = await getDoc(userRef);
 
+      const isBonusValid = enteredRef === 'NAWA3773';
+
       if (userSnap.exists()) {
+        const existingData = userSnap.data() as UserProfile;
+        const bonusToAdd = isBonusValid && (!existingData.depositBalance || existingData.depositBalance === 0) ? 10 : 0;
         await updateDoc(userRef, {
           ign: cleanIgn,
           freeFireUid: cleanUid,
+          phone: cleanPhone,
+          whatsappNumber: cleanPhone,
+          depositBalance: increment(bonusToAdd),
+          referredBy: isBonusValid ? 'NAWA3773' : (existingData.referredBy || null),
           updatedAt: new Date().toISOString(),
         });
-        setProfile((prev) => (prev ? { ...prev, ign: cleanIgn, freeFireUid: cleanUid } : null));
+        if (bonusToAdd > 0) {
+          await addDoc(collection(db, 'walletHistory'), {
+            userId: user.uid,
+            type: 'REFERRAL_BONUS',
+            description: 'Welcome Bonus ₹10 (Code NAWA3773)',
+            amount: 10,
+            createdAt: new Date().toISOString(),
+          }).catch(() => {});
+        }
+        setProfile((prev) =>
+          prev
+            ? {
+                ...prev,
+                ign: cleanIgn,
+                freeFireUid: cleanUid,
+                phone: cleanPhone,
+                whatsappNumber: cleanPhone,
+                depositBalance: (prev.depositBalance || 0) + bonusToAdd,
+              }
+            : null
+        );
       } else {
+        const initialDeposit = isBonusValid ? 10 : 0;
         const newProfile: UserProfile = {
           uid: user.uid,
           email: user.email || '',
           ign: cleanIgn,
           freeFireUid: cleanUid,
-          depositBalance: 0,
+          phone: cleanPhone,
+          whatsappNumber: cleanPhone,
+          depositBalance: initialDeposit,
           winningsBalance: 0,
           isBanned: false,
+          referredBy: isBonusValid ? 'NAWA3773' : null,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
         await setDoc(userRef, newProfile);
+        if (initialDeposit > 0) {
+          await addDoc(collection(db, 'walletHistory'), {
+            userId: user.uid,
+            type: 'REFERRAL_BONUS',
+            description: 'Welcome Bonus ₹10 (Code NAWA3773)',
+            amount: 10,
+            createdAt: new Date().toISOString(),
+          }).catch(() => {});
+        }
         setProfile(newProfile);
       }
       setNeedsProfileSetup(false);
@@ -838,11 +911,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   };
 
-  const updateProfileDetails = async (ign: string, freeFireUid: string) => {
+  const updateProfileDetails = async (ign: string, freeFireUid: string, phone?: string) => {
     if (!user || !profile) throw new Error('Not authenticated');
 
     const cleanIgn = ign.trim();
     const cleanUid = freeFireUid.trim();
+    const cleanPhone = (phone || '').trim();
 
     if (!cleanIgn || !cleanUid) {
       throw new Error('Please enter valid Free Fire IGN and UID');
@@ -852,9 +926,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await updateDoc(doc(db, 'users', user.uid), {
         ign: cleanIgn,
         freeFireUid: cleanUid,
+        ...(cleanPhone ? { phone: cleanPhone, whatsappNumber: cleanPhone } : {}),
         updatedAt: new Date().toISOString(),
       });
-      setProfile((prev) => (prev ? { ...prev, ign: cleanIgn, freeFireUid: cleanUid } : null));
+      setProfile((prev) =>
+        prev
+          ? {
+              ...prev,
+              ign: cleanIgn,
+              freeFireUid: cleanUid,
+              ...(cleanPhone ? { phone: cleanPhone, whatsappNumber: cleanPhone } : {}),
+            }
+          : null
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
     }

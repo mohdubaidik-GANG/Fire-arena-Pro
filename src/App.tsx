@@ -53,6 +53,8 @@ import { AdminDashboard } from './components/Admin/AdminDashboard';
 import { UnauthorizedScreen } from './components/Admin/UnauthorizedScreen';
 import { Tournament, TournamentRegistration, TournamentCategory } from './types';
 import { sound } from './utils/audio';
+import { WinnersTab } from './components/WinnersTab';
+import { LeaderboardTab } from './components/LeaderboardTab';
 
 // Lazy loaded modals for fast initial bundle and zero lag
 const JoinMatchModal = React.lazy(() => import('./components/JoinMatchModal').then(m => ({ default: m.JoinMatchModal })));
@@ -61,6 +63,7 @@ const ProfileModal = React.lazy(() => import('./components/ProfileModal').then(m
 const MatchRulesModal = React.lazy(() => import('./components/MatchRulesModal').then(m => ({ default: m.MatchRulesModal })));
 const ProofSubmissionModal = React.lazy(() => import('./components/ProofSubmissionModal').then(m => ({ default: m.ProofSubmissionModal })));
 const NotificationCenterModal = React.lazy(() => import('./components/NotificationCenterModal').then(m => ({ default: m.NotificationCenterModal })));
+const SupportModal = React.lazy(() => import('./components/SupportModal').then(m => ({ default: m.SupportModal })));
 
 // React Error Boundary Component to prevent white/black screen freeze
 interface ErrorBoundaryProps {
@@ -264,14 +267,16 @@ interface PlayerArenaProps {
 function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const { user, profile } = useAuth();
 
-  // 5-Tab System: 'earn' | 'ranking' | 'play' | 'wallet' | 'account'
-  const [activeTab, setActiveTab] = useState<'earn' | 'ranking' | 'play' | 'wallet' | 'account'>(() => {
+  // Navigation Tab System: 'play' | 'winners' | 'ranking' | 'earn' | 'wallet' | 'account'
+  const [activeTab, setActiveTab] = useState<'play' | 'winners' | 'ranking' | 'earn' | 'wallet' | 'account'>(() => {
     if (typeof window !== 'undefined') {
       const path = window.location.pathname;
       const search = window.location.search;
       if (path === '/wallet' || path.startsWith('/wallet/')) {
         return 'wallet';
       }
+      if (path === '/winners') return 'winners';
+      if (path === '/leaderboard') return 'ranking';
     }
     return 'play';
   });
@@ -293,6 +298,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
   const [selectedTournamentForRules, setSelectedTournamentForRules] = useState<Tournament | null>(null);
   const [selectedTournamentForProof, setSelectedTournamentForProof] = useState<Tournament | null>(null);
   const [generalRulesOpen, setGeneralRulesOpen] = useState(false);
+  const [supportModalOpen, setSupportModalOpen] = useState(false);
 
   // Settings & Menu Modals
   const [tutorialModalOpen, setTutorialModalOpen] = useState(false);
@@ -789,6 +795,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         onOpenWallet={handleOpenWallet}
         onOpenProfile={() => setActiveTab('account')}
         onOpenNotifications={() => setNotificationCenterOpen(true)}
+        onOpenSupport={() => setSupportModalOpen(true)}
         unreadNotificationsCount={unreadNotifCount}
         onLogout={onLogout}
       />
@@ -920,6 +927,81 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               </div>
               <ChevronRight className="w-5 h-5 text-red-200 shrink-0" />
             </button>
+
+            {/* Quick Feature Navigation Strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  setActiveTab('play');
+                }}
+                className={`p-2.5 rounded-xl border text-left flex items-center gap-2.5 transition-all cursor-pointer group ${
+                  activeTab === 'play'
+                    ? 'bg-red-950/40 border-red-500/60 shadow-md shadow-red-950/50'
+                    : 'bg-[#0e0f1d] hover:bg-[#16182c] border-red-500/20'
+                }`}
+              >
+                <div className="w-8 h-8 rounded-lg bg-red-600/20 text-red-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Gamepad2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-white block truncate font-heading">Upcoming Rooms</span>
+                  <span className="text-[10px] text-slate-400 block truncate">Live countdowns</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  setActiveTab('winners');
+                }}
+                className="p-2.5 rounded-xl bg-[#0e0f1d] hover:bg-[#16182c] border border-amber-500/30 text-left flex items-center gap-2.5 transition-all cursor-pointer group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Trophy className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-white block truncate font-heading">Past Winners</span>
+                  <span className="text-[10px] text-emerald-400 block truncate font-semibold">● Payment Verified</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  setActiveTab('ranking');
+                }}
+                className="p-2.5 rounded-xl bg-[#0e0f1d] hover:bg-[#16182c] border border-purple-500/30 text-left flex items-center gap-2.5 transition-all cursor-pointer group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Crosshair className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-white block truncate font-heading">Leaderboard</span>
+                  <span className="text-[10px] text-slate-400 block truncate">Top Fraggers & Pts</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playClick();
+                  setGeneralRulesOpen(true);
+                }}
+                className="p-2.5 rounded-xl bg-[#0e0f1d] hover:bg-[#16182c] border border-slate-700 text-left flex items-center gap-2.5 transition-all cursor-pointer group"
+              >
+                <div className="w-8 h-8 rounded-lg bg-blue-600/20 text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-white block truncate font-heading">Fair-Play Rules</span>
+                  <span className="text-[10px] text-slate-400 block truncate">Mobile Only Policy</span>
+                </div>
+              </button>
+            </div>
 
             {/* Carousel / Promo Banners */}
             <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#160918] via-[#0f0915] to-[#120817] border border-red-950/70 p-4 sm:p-5 shadow-xl">
@@ -1248,202 +1330,24 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         )}
 
         {/* =========================================================================
-            2. RANKING / LEADERBOARD SCREEN
+            2. WINNERS / PAST RESULTS SCREEN
+           ========================================================================= */}
+        {activeTab === 'winners' && (
+          <WinnersTab
+            tournaments={tournaments}
+            onOpenRules={() => setGeneralRulesOpen(true)}
+            onOpenSupport={() => setSupportModalOpen(true)}
+          />
+        )}
+
+        {/* =========================================================================
+            3. LIVE LEADERBOARD & STANDINGS SCREEN
            ========================================================================= */}
         {activeTab === 'ranking' && (
-          <div className="max-w-3xl mx-auto space-y-5 animate-in fade-in duration-200">
-            {/* Header Title & Mode Toggle */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg sm:text-xl font-heading font-black text-white tracking-wide flex items-center gap-2">
-                  <Trophy className="w-5 h-5 text-amber-400" />
-                  <span>FIRE ARENA PRO LEADERBOARD</span>
-                </h2>
-                <p className="text-xs text-slate-400">Official tournament rankings & top tier esports performers</p>
-              </div>
-
-              {/* Toggle: Top Tournament Winners vs Top Killers */}
-              <div className="flex items-center gap-1 p-1 bg-black/60 rounded-xl border border-red-950/70 self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => {
-                    sound.playClick();
-                    setLeaderboardType('winnings');
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
-                    leaderboardType === 'winnings'
-                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-600/30'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Top Winners</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    sound.playClick();
-                    setLeaderboardType('kills');
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-heading font-black tracking-wider uppercase transition-all cursor-pointer flex items-center gap-1.5 ${
-                    leaderboardType === 'kills'
-                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-600/30'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Crosshair className="w-3.5 h-3.5 text-red-400" />
-                  <span>Top Killers</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Top Horizontal Category Scroller */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              {['ALL', 'FULL MAP', 'LW 10₹', 'CS HEAD', 'LW 1V1', 'LW 2V2', 'CS 1V1'].map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => {
-                    sound.playClick();
-                    setRankingCategory(cat);
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-heading font-bold uppercase tracking-wider whitespace-nowrap transition-all cursor-pointer ${
-                    rankingCategory === cat
-                      ? 'bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-600/30'
-                      : 'bg-[#090a14] border border-red-950/60 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-
-            {/* Top 3 Podium Cards with Gold, Silver, Bronze Medals */}
-            <div className="grid grid-cols-3 gap-2.5 pt-3">
-              {/* Rank 2 (Silver Medal 🥈) */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-b from-slate-600/10 via-[#0e101d] to-[#080911] border border-slate-400/30 text-center flex flex-col items-center justify-between space-y-2 shadow-lg shadow-slate-900/40 relative">
-                <span className="text-xl">🥈</span>
-                <div className="w-8 h-8 rounded-full bg-slate-300 text-black font-mono font-black text-xs flex items-center justify-center shadow-md">
-                  #2
-                </div>
-                <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-white block truncate w-full">
-                    {leaderboardType === 'winnings' ? 'ViperKill FF' : 'White444_Head'}
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-mono block">
-                    {leaderboardType === 'winnings' ? '142 Matches' : '98 Matches'}
-                  </span>
-                </div>
-                <span className="text-xs font-black font-mono text-slate-200">
-                  {leaderboardType === 'winnings' ? '🪙 8,450' : '🎯 956 Kills'}
-                </span>
-              </div>
-
-              {/* Rank 1 (Gold Medal 🥇) */}
-              <div className="p-4 rounded-2xl bg-gradient-to-b from-amber-500/20 via-[#18121f] to-[#0c0d18] border-2 border-amber-500/60 text-center flex flex-col items-center justify-between space-y-2 -translate-y-2.5 shadow-xl shadow-amber-500/20 relative">
-                <span className="text-2xl animate-bounce">🥇</span>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-amber-400 to-yellow-500 text-black font-mono font-black text-sm flex items-center justify-center shadow-lg shadow-amber-500/40">
-                  <Crown className="w-5 h-5 fill-black" />
-                </div>
-                <div className="space-y-0.5">
-                  <span className="text-sm font-black text-amber-300 block truncate w-full">
-                    Raistar_Pro99
-                  </span>
-                  <span className="text-[10px] text-amber-400/90 font-mono block">
-                    {leaderboardType === 'winnings' ? '210 Matches Won' : '1,284 Frags'}
-                  </span>
-                </div>
-                <span className="text-sm font-black font-mono text-amber-300">
-                  {leaderboardType === 'winnings' ? '🪙 16,920' : '🎯 1,284 Kills'}
-                </span>
-              </div>
-
-              {/* Rank 3 (Bronze Medal 🥉) */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-b from-amber-900/15 via-[#0e0c15] to-[#080911] border border-amber-800/30 text-center flex flex-col items-center justify-between space-y-2 shadow-lg shadow-amber-950/40 relative">
-                <span className="text-xl">🥉</span>
-                <div className="w-8 h-8 rounded-full bg-amber-700 text-black font-mono font-black text-xs flex items-center justify-center shadow-md">
-                  #3
-                </div>
-                <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-white block truncate w-full">
-                    {leaderboardType === 'winnings' ? 'ShadowOP' : 'ViperKill FF'}
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-mono block">
-                    {leaderboardType === 'winnings' ? '98 Matches' : '142 Matches'}
-                  </span>
-                </div>
-                <span className="text-xs font-black font-mono text-amber-500">
-                  {leaderboardType === 'winnings' ? '🪙 6,180' : '🎯 840 Kills'}
-                </span>
-              </div>
-            </div>
-
-            {/* Clean Leaderboard Table with Medals & Real User Stats */}
-            <div className="rounded-2xl bg-[#090a14] border border-red-950/70 overflow-hidden shadow-xl">
-              <div className="p-3.5 border-b border-red-950/60 bg-[#0d0e1c] flex items-center justify-between text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
-                <div className="flex items-center gap-4">
-                  <span className="w-8 text-center">Rank</span>
-                  <span>User Name / Player</span>
-                </div>
-                <span>{leaderboardType === 'winnings' ? 'Total Won' : 'Kills'}</span>
-              </div>
-
-              <div className="divide-y divide-red-950/40">
-                {(leaderboardType === 'winnings'
-                  ? [
-                      { rank: 1, name: 'Raistar_Pro99', score: '🪙 16,920', badge: '🥇 Gold' },
-                      { rank: 2, name: 'ViperKill FF', score: '🪙 8,450', badge: '🥈 Silver' },
-                      { rank: 3, name: 'ShadowOP', score: '🪙 6,180', badge: '🥉 Bronze' },
-                      { rank: 4, name: 'White444_Head', score: '🪙 4,900', badge: '#4' },
-                      { rank: 5, name: 'SniperKing7', score: '🪙 3,750', badge: '#5' },
-                      { rank: 6, name: 'DesiGamer_T1', score: '🪙 2,890', badge: '#6' },
-                      { rank: 7, name: 'Total_Gaming_9', score: '🪙 2,240', badge: '#7' },
-                      { rank: 8, name: 'KillerClash', score: '🪙 1,980', badge: '#8' },
-                      { rank: 9, name: 'LoneWolf_Pro', score: '🪙 1,560', badge: '#9' },
-                      { rank: 10, name: profile?.ign || 'You (Gamer)', score: `🪙 ${((profile?.winningsBalance || 0) + (profile?.depositBalance || 0)).toLocaleString('en-IN')}`, badge: '#10' },
-                    ]
-                  : [
-                      { rank: 1, name: 'Raistar_Pro99', score: '🎯 1,284 Kills', badge: '🥇 Gold' },
-                      { rank: 2, name: 'White444_Head', score: '🎯 956 Kills', badge: '🥈 Silver' },
-                      { rank: 3, name: 'ViperKill FF', score: '🎯 840 Kills', badge: '🥉 Bronze' },
-                      { rank: 4, name: 'SniperKing7', score: '🎯 712 Kills', badge: '#4' },
-                      { rank: 5, name: 'ShadowOP', score: '🎯 624 Kills', badge: '#5' },
-                      { rank: 6, name: 'KillerClash', score: '🎯 510 Kills', badge: '#6' },
-                      { rank: 7, name: 'DesiGamer_T1', score: '🎯 480 Kills', badge: '#7' },
-                      { rank: 8, name: 'Total_Gaming_9', score: '🎯 390 Kills', badge: '#8' },
-                      { rank: 9, name: 'LoneWolf_Pro', score: '🎯 310 Kills', badge: '#9' },
-                      { rank: 10, name: profile?.ign || 'You (Gamer)', score: `🎯 ${profile?.totalKills || 0} Kills`, badge: '#10' },
-                    ]
-                ).map((player) => (
-                  <div
-                    key={player.rank}
-                    className="p-3.5 flex items-center justify-between text-xs hover:bg-red-950/20 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <span className="w-14 text-center font-mono font-bold text-slate-400">
-                        {player.badge}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white">{player.name}</span>
-                        {player.rank <= 3 && (
-                          <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 border border-amber-500/30 text-[9px] font-mono">
-                            CHAMPION
-                          </span>
-                        )}
-                        {player.name === profile?.ign && (
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 text-[9px] font-mono font-bold">
-                            YOU
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span className="font-black font-mono text-amber-400 flex items-center gap-1">
-                      {player.score}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <LeaderboardTab
+            tournaments={tournaments}
+            profile={profile}
+          />
         )}
 
         {/* =========================================================================
@@ -1847,19 +1751,22 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
               </button>
 
               {/* 13. Customer Support */}
-              <a
-                href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
-                target="_blank"
-                rel="noreferrer"
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  setSupportModalOpen(true);
+                }}
                 className="w-full p-3 rounded-xl bg-black/40 hover:bg-emerald-950/30 border border-slate-900 hover:border-emerald-500/30 text-left flex items-center justify-between text-xs text-slate-300 transition-colors cursor-pointer"
-                title="Join Official WhatsApp Group / Support"
               >
                 <div className="flex items-center gap-3">
                   <Headphones className="w-4 h-4 text-emerald-400" />
-                  <span className="font-semibold text-white">Join Official WhatsApp Group / Support</span>
+                  <div>
+                    <span className="font-semibold text-white block">24/7 Customer Support & Helpdesk</span>
+                    <span className="text-[10px] text-slate-400">WhatsApp, Telegram, FAQ & Email Support</span>
+                  </div>
                 </div>
-                <ExternalLink className="w-4 h-4 text-slate-500" />
-              </a>
+                <ChevronRight className="w-4 h-4 text-emerald-500" />
+              </button>
 
               {/* 14. Share App */}
               <button
@@ -1931,46 +1838,34 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         )}
       </main>
 
+      {/* Floating 24/7 Support & Helpdesk Button */}
+      <button
+        onClick={() => {
+          sound.playClick();
+          setSupportModalOpen(true);
+        }}
+        className="fixed bottom-18 right-3 sm:bottom-20 sm:right-6 z-30 px-3.5 py-2 rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-heading font-black text-xs uppercase tracking-wider shadow-lg shadow-emerald-950/70 border border-emerald-400/40 flex items-center gap-2 cursor-pointer active:scale-95 transition-all group"
+        title="24/7 Support & Helpdesk"
+      >
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-300"></span>
+        </span>
+        <Headphones className="w-4 h-4 text-emerald-200 group-hover:rotate-12 transition-transform" />
+        <span className="font-bold">24/7 Support</span>
+      </button>
+
       {/* =========================================================================
-          GLOBAL 5-TAB BOTTOM NAVIGATION BAR (PURE BLACK & GLOWING HIGHLIGHT)
+          GLOBAL 6-TAB BOTTOM NAVIGATION BAR (PURE BLACK & GLOWING HIGHLIGHT)
          ========================================================================= */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-black/95 backdrop-blur-xl border-t border-red-950/80 px-2 py-1.5 flex items-center justify-around shadow-[0_-5px_25px_rgba(0,0,0,0.9)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        {/* 1. 🪙 Earn */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-black/95 backdrop-blur-xl border-t border-red-950/80 px-1 py-1.5 flex items-center justify-around shadow-[0_-5px_25px_rgba(0,0,0,0.9)] pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        {/* 1. 🎮 Play (Upcoming Tournaments Arena) */}
         <button
-          onClick={() => setActiveTab('earn')}
-          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
-            activeTab === 'earn'
-              ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-black'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          {activeTab === 'earn' && (
-            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
-          )}
-          <Coins className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'earn' ? 'scale-110 text-amber-400 stroke-[2.5]' : 'opacity-70'}`} />
-          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">Earn</span>
-        </button>
-
-        {/* 2. 🏆 Ranking */}
-        <button
-          onClick={() => setActiveTab('ranking')}
-          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
-            activeTab === 'ranking'
-              ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-black'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          {activeTab === 'ranking' && (
-            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
-          )}
-          <Trophy className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'ranking' ? 'scale-110 text-amber-400 stroke-[2.5]' : 'opacity-70'}`} />
-          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">Ranking</span>
-        </button>
-
-        {/* 3. 🎮 Play (Main Arena Dashboard) */}
-        <button
-          onClick={() => setActiveTab('play')}
-          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
+          onClick={() => {
+            sound.playClick();
+            setActiveTab('play');
+          }}
+          className={`relative flex flex-col items-center gap-1 px-2 py-1 transition-all duration-200 cursor-pointer ${
             activeTab === 'play'
               ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-black'
               : 'text-slate-400 hover:text-slate-200'
@@ -1980,13 +1875,73 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
           )}
           <Gamepad2 className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'play' ? 'scale-110 text-amber-400 stroke-[2.5]' : 'opacity-70'}`} />
-          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">Play</span>
+          <span className="font-heading uppercase font-bold tracking-[0.5px] text-[10px]">Play</span>
         </button>
 
-        {/* 4. 💳 Wallet */}
+        {/* 2. 🏆 Winners (Past Results & Winner Proof Showcase) */}
         <button
-          onClick={() => setActiveTab('wallet')}
-          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
+          onClick={() => {
+            sound.playClick();
+            setActiveTab('winners');
+          }}
+          className={`relative flex flex-col items-center gap-1 px-2 py-1 transition-all duration-200 cursor-pointer ${
+            activeTab === 'winners'
+              ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-black'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          {activeTab === 'winners' && (
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
+          )}
+          <Trophy className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'winners' ? 'scale-110 text-amber-400 stroke-[2.5]' : 'opacity-70'}`} />
+          <span className="font-heading uppercase font-bold tracking-[0.5px] text-[10px]">Winners</span>
+        </button>
+
+        {/* 3. 👑 Leaderboard (Live Standings & Top Killers) */}
+        <button
+          onClick={() => {
+            sound.playClick();
+            setActiveTab('ranking');
+          }}
+          className={`relative flex flex-col items-center gap-1 px-2 py-1 transition-all duration-200 cursor-pointer ${
+            activeTab === 'ranking'
+              ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-black'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          {activeTab === 'ranking' && (
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
+          )}
+          <Crown className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'ranking' ? 'scale-110 text-amber-400 stroke-[2.5]' : 'opacity-70'}`} />
+          <span className="font-heading uppercase font-bold tracking-[0.5px] text-[10px]">Leaderboard</span>
+        </button>
+
+        {/* 4. 🪙 Earn (Refer & Earn ₹10 Bonus) */}
+        <button
+          onClick={() => {
+            sound.playClick();
+            setActiveTab('earn');
+          }}
+          className={`relative flex flex-col items-center gap-1 px-2 py-1 transition-all duration-200 cursor-pointer ${
+            activeTab === 'earn'
+              ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-black'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          {activeTab === 'earn' && (
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
+          )}
+          <Coins className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'earn' ? 'scale-110 text-amber-400 stroke-[2.5]' : 'opacity-70'}`} />
+          <span className="font-heading uppercase font-bold tracking-[0.5px] text-[10px]">Earn</span>
+        </button>
+
+        {/* 5. 💳 Wallet (Instant Deposit & Withdrawal) */}
+        <button
+          onClick={() => {
+            sound.playClick();
+            setActiveTab('wallet');
+          }}
+          className={`relative flex flex-col items-center gap-1 px-2 py-1 transition-all duration-200 cursor-pointer ${
             activeTab === 'wallet'
               ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-black'
               : 'text-slate-400 hover:text-slate-200'
@@ -1996,13 +1951,16 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
           )}
           <CreditCard className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'wallet' ? 'scale-110 text-amber-400 stroke-[2.5]' : 'opacity-70'}`} />
-          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">Wallet</span>
+          <span className="font-heading uppercase font-bold tracking-[0.5px] text-[10px]">Wallet</span>
         </button>
 
-        {/* 5. 👤 Account */}
+        {/* 6. 👤 Account (Profile & Settings) */}
         <button
-          onClick={() => setActiveTab('account')}
-          className={`relative flex flex-col items-center gap-1 px-3 py-1 transition-all duration-200 cursor-pointer ${
+          onClick={() => {
+            sound.playClick();
+            setActiveTab('account');
+          }}
+          className={`relative flex flex-col items-center gap-1 px-2 py-1 transition-all duration-200 cursor-pointer ${
             activeTab === 'account'
               ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)] font-black'
               : 'text-slate-400 hover:text-slate-200'
@@ -2012,7 +1970,7 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-1 rounded-full bg-amber-400 shadow-[0_0_10px_#f59e0b]" />
           )}
           <User className={`w-5 h-5 transition-transform duration-200 ${activeTab === 'account' ? 'scale-110 text-amber-400 stroke-[2.5]' : 'opacity-70'}`} />
-          <span className="font-heading uppercase font-bold tracking-[1px] text-[10px]">Account</span>
+          <span className="font-heading uppercase font-bold tracking-[0.5px] text-[10px]">Account</span>
         </button>
       </nav>
 
@@ -2039,7 +1997,6 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
           />
         )}
       </React.Suspense>
-
 
       {/* Suspense Container for Lazy Loaded Modals */}
       <React.Suspense fallback={null}>
@@ -2069,6 +2026,14 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
             tournament={null}
             isOpen={generalRulesOpen}
             onClose={() => setGeneralRulesOpen(false)}
+          />
+        )}
+
+        {/* 24/7 Official Customer Support Modal */}
+        {supportModalOpen && (
+          <SupportModal
+            isOpen={supportModalOpen}
+            onClose={() => setSupportModalOpen(false)}
           />
         )}
 

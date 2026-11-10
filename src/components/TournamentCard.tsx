@@ -42,6 +42,42 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
   const [copiedPass, setCopiedPass] = useState(false);
   const [copyToast, setCopyToast] = useState<string | null>(null);
 
+  // Live Countdown Timer
+  const [countdown, setCountdown] = useState<string>('');
+  const [isStartsSoon, setIsStartsSoon] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    const updateCountdown = () => {
+      const matchTimestamp = new Date(tournament.startTime).getTime();
+      const diff = matchTimestamp - Date.now();
+
+      if (diff <= 0) {
+        setCountdown('Starts Now');
+        setIsStartsSoon(true);
+        return;
+      }
+
+      const totalSec = Math.floor(diff / 1000);
+      const hours = Math.floor(totalSec / 3600);
+      const minutes = Math.floor((totalSec % 3600) / 60);
+      const seconds = totalSec % 60;
+
+      setIsStartsSoon(hours === 0 && minutes < 15);
+
+      if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        setCountdown(`${days}d ${hours % 24}h`);
+      } else {
+        const pad = (n: number) => String(n).padStart(2, '0');
+        setCountdown(`${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`);
+      }
+    };
+
+    updateCountdown();
+    const timer = setInterval(updateCountdown, 1000);
+    return () => clearInterval(timer);
+  }, [tournament.startTime]);
+
   const currentJoined = typeof tournament.joinedSlots === 'number'
     ? tournament.joinedSlots
     : (tournament.joinedPlayers ? tournament.joinedPlayers.length : Number(tournament.registeredCount) || 0);
@@ -135,9 +171,21 @@ export const TournamentCard: React.FC<TournamentCardProps> = ({
             </span>
           )}
           {!isLive && !isCompleted && (
-            <span className="px-2.5 py-0.5 rounded-full bg-red-950/40 text-red-300 border border-red-900/40 text-[10px] font-mono flex items-center gap-1">
-              <Clock className="w-3 h-3 text-red-400" /> {formattedDate}, {formattedTime}
-            </span>
+            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+              <span className="px-2 py-0.5 rounded-full bg-red-950/40 text-red-300 border border-red-900/40 text-[10px] font-mono flex items-center gap-1">
+                <Clock className="w-3 h-3 text-red-400" /> {formattedDate}, {formattedTime}
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold flex items-center gap-1 border shadow-sm ${
+                  isStartsSoon
+                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+                    : 'bg-slate-900/90 text-slate-300 border-slate-800'
+                }`}
+              >
+                <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
+                <span>Starts in: {countdown}</span>
+              </span>
+            </div>
           )}
         </div>
 

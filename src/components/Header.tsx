@@ -8,6 +8,7 @@ interface HeaderProps {
   onOpenWallet: (tab?: 'overview' | 'deposit' | 'withdraw' | 'history') => void;
   onOpenProfile: () => void;
   onOpenNotifications?: () => void;
+  onOpenSupport?: () => void;
   unreadNotificationsCount?: number;
   onLogout?: () => void;
   isAdminRoute?: boolean;
@@ -17,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenWallet, 
   onOpenProfile, 
   onOpenNotifications,
+  onOpenSupport,
   unreadNotificationsCount = 0,
   isAdminRoute = false 
 }) => {
@@ -109,17 +111,23 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </div>
 
-          {/* Official WhatsApp Support & Group */}
-          <a
-            href="https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC"
-            target="_blank"
-            rel="noreferrer"
+          {/* 24/7 Support Desk (Headphones) */}
+          <button
+            type="button"
+            onClick={() => {
+              sound.playClick();
+              if (onOpenSupport) {
+                onOpenSupport();
+              } else {
+                window.open('https://chat.whatsapp.com/HXFdnz9VkWmFHehKIBo4WC', '_blank');
+              }
+            }}
             className="w-8 h-8 rounded-full bg-slate-900/90 hover:bg-emerald-950/60 border border-slate-800 hover:border-emerald-500/40 flex items-center justify-center text-slate-300 hover:text-emerald-400 transition-colors cursor-pointer"
-            title="Join Official WhatsApp Group / Support"
-            aria-label="Join Official WhatsApp Group / Support"
+            title="24/7 Help & Support Desk"
+            aria-label="24/7 Help & Support Desk"
           >
             <Headphones className="w-4 h-4 text-slate-300 hover:text-emerald-400" />
-          </a>
+          </button>
 
           {/* Red Wallet Pill Capsule showing Balance: "🪙 [0.00] | +" */}
           <div className="flex items-center rounded-full bg-gradient-to-r from-red-600 to-rose-700 text-white shadow-md shadow-red-600/30 border border-red-500/50 p-0.5">

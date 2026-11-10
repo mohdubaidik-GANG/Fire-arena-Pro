@@ -223,54 +223,71 @@ export const MatchRulesModal: React.FC<MatchRulesModalProps> = ({
           <div className="space-y-2.5">
             <span className="text-[10px] font-mono uppercase tracking-wider text-red-400 block font-semibold flex items-center gap-1.5">
               <ShieldAlert className="w-3.5 h-3.5" />
-              <span>Strict Fair Play Rules (Immediate Disqualification upon Violation)</span>
+              <span>Rules & Fair-Play Policy (Strict Enforcement)</span>
             </span>
 
+            {/* Rule 1: Mobile Only */}
             <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
                   1
                 </span>
-                <span className="text-xs font-bold text-white">IGN & Free Fire UID Match</span>
+                <span className="text-xs font-bold text-white">Mobile Only — Emulators (PC) Strictly Forbidden</span>
               </div>
               <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
-                Aapka In-Game Name (IGN) aur Free Fire UID bilkul match hona chahiye jo aapne profile me set kiya hai. Galat IGN wale player ko custom room se kick kar diya jayega aur entry fee refund nahi hogi.
+                Emulators (PC / BlueStacks / LDPlayer / MSI) are strictly not allowed. All matches are purely Mobile touch players only. Emulator detection leads to immediate room kick without refund.
               </p>
             </div>
 
+            {/* Rule 2: No Hacks or Configs */}
             <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
                   2
                 </span>
-                <span className="text-xs font-bold text-white">Zero Tolerance for Hacks, Configs & Teaming</span>
+                <span className="text-xs font-bold text-white">No Hacks, Scripts, Aimbots, or Config Tools</span>
               </div>
               <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
-                Auto-aim, headshot config files, mod APKs, emulator bypass, ya Solo matches me teaming karna sakht mana hai. Aisa karne par account permanently ban aur balance forfeit hoga.
+                Zero tolerance for auto-aim, headshot config files, mod APKs, speed hacks, or third-party config tools. Results in instant permanent ban and complete forfeiture of wallet balance.
               </p>
             </div>
 
+            {/* Rule 3: No Teaming */}
             <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
                   3
                 </span>
-                <span className="text-xs font-bold text-white">Room ID & Password Confidentiality</span>
+                <span className="text-xs font-bold text-white">No Teaming Up in Solo Matches</span>
               </div>
               <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
-                Room ID aur Password match start se 15 minute pehle sirf registered players ke card par unlock hoga. Room pass kisi unregistered dost ke sath share karna ban ka kaaran banega.
+                Teaming up in Solo matches or intentionally feeding kills is strictly prohibited and will lead to immediate disqualification and prize forfeiture for all collaborating players.
               </p>
             </div>
 
+            {/* Rule 4: Screenshot Required */}
             <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
                   4
                 </span>
-                <span className="text-xs font-bold text-white">Result Verification & Instant Coin Payouts</span>
+                <span className="text-xs font-bold text-white">Screenshot of End-Game Scoreboard Required</span>
               </div>
               <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
-                Match khatam hone ke baad Admin room scoreboard check karke kills aur rank verify karega. Winnings coins turant aapke wallet me add ho jayenge jise aap UPI ya Play Redeem Code se nikal sakte hain.
+                Screenshot of end-game kill feed/scoreboard is required to claim kill rewards and rank prizes. Submit via 'Submit Proof' on the match card within 30 minutes of match completion.
+              </p>
+            </div>
+
+            {/* Rule 5: Room Confidentiality */}
+            <div className="p-3 rounded-xl bg-black/40 border border-red-950/60 space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-red-600/20 text-red-400 font-bold text-[10px] flex items-center justify-center font-mono">
+                  5
+                </span>
+                <span className="text-xs font-bold text-white">Room ID & Password Confidentiality</span>
+              </div>
+              <p className="text-[11px] text-slate-400 pl-7 leading-relaxed">
+                Room ID & Password sharing outside the app or with unregistered players will result in immediate disqualification and a permanent account ban.
               </p>
             </div>
           </div>
