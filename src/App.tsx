@@ -1203,10 +1203,10 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
                 <div className="p-8 rounded-2xl bg-[#090a14] border border-red-950/60 text-center space-y-3">
                   <Trophy className="w-10 h-10 text-slate-600 mx-auto" />
                   <h3 className="text-base font-bold text-white font-heading">
-                    No active matches
+                    No active matches found. Click 'CREATE MATCH' to add a new tournament.
                   </h3>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Click 'CREATE MATCH' to host a tournament.
+                    No matches are currently active. Host a match in the Admin Panel or refresh to check for upcoming rooms.
                   </p>
                   <button
                     onClick={() => {

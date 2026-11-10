@@ -613,9 +613,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // 1. Permanent Match Deletion (Direct Firestore deleteDoc + immediate UI state removal)
+  const handlePermanentDeleteMatch = async (matchId: string) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to PERMANENTLY delete this match from the database? This action cannot be undone."
+    );
+    if (!confirmed) return;
+
+    try {
+      const matchRef = doc(db, "matches", matchId);
+      await deleteDoc(matchRef);
+      try {
+        await deleteDoc(doc(db, "tournaments", matchId));
+      } catch {}
+
+      // Immediately remove the match from local UI state
+      setTournaments((prevMatches) => prevMatches.filter((m) => m.id !== matchId));
+
+      try {
+        localStorage.removeItem('cached_tournaments');
+      } catch {}
+
+      alert("Match permanently deleted from database.");
+      showToast("Match permanently deleted from database.", "success");
+    } catch (err: unknown) {
+      console.error("Error deleting match:", err);
+      showToast("Failed to delete match: " + (err instanceof Error ? err.message : String(err)), "error");
+    }
+  };
+
   // Backwards-compatible aliases
   const handleCancelAndDeleteTournament = (t: Tournament) => handleCancelAndRefundMatch(t, 'cancel');
   const handleDeleteMatch = (matchId: string, skipPrompt = false) => {
+    if (!skipPrompt) {
+      handlePermanentDeleteMatch(matchId);
+      return;
+    }
     const target = tournaments.find((t) => t.id === matchId);
     if (target) {
       handleCancelAndRefundMatch(target, 'delete', skipPrompt);
@@ -884,9 +917,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
             {displayedTournaments.length === 0 ? (
               <div className="p-8 rounded-2xl bg-[#090a12] border border-red-950/70 text-center space-y-2">
-                <Trophy className="w-10 h-10 text-red-700 mx-auto mb-2" />
-                <p className="text-base font-bold text-white uppercase tracking-wider">No active matches</p>
-                <p className="text-xs text-slate-400 max-w-sm mx-auto">Click 'CREATE MATCH' to host a tournament.</p>
+                <p className="text-base font-bold text-white uppercase tracking-wider">
+                  No active matches found. Click 'CREATE MATCH' to add a new tournament.
+                </p>
                 <div className="pt-2">
                   <button
                     onClick={() => setShowCreateModal(true)}
@@ -1056,30 +1089,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         </div>
                       </div>
 
-                      {/* Match Deletion Actions */}
                       {/* Match Deletion & Cancellation Actions */}
-                      <div className="flex items-center gap-2">
+                      <div className="space-y-2">
+                        {Array.isArray(t.joinedPlayers) && t.joinedPlayers.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelAndRefundMatch(t, 'cancel')}
+                            className="w-full h-8 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            title="Cancel match and automatically refund entry fees to all joined players"
+                          >
+                            <Ban className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Cancel & Refund (₹{t.entryFee} × {t.joinedPlayers.length})</span>
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => handleCancelAndRefundMatch(t, 'cancel')}
-                          className="flex-1 h-8 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          title="Cancel match and automatically refund entry fees to all joined players"
-                        >
-                          <Ban className="w-3.5 h-3.5 text-amber-400" />
-                          <span>
-                            {Array.isArray(t.joinedPlayers) && t.joinedPlayers.length > 0
-                              ? `Cancel & Refund (₹${t.entryFee} × ${t.joinedPlayers.length})`
-                              : 'Cancel Match'}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleCancelAndRefundMatch(t, 'delete')}
-                          className="h-8 px-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-400 border border-red-500/40 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                          onClick={() => handlePermanentDeleteMatch(t.id)}
+                          className="w-full h-9 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-red-950/60 transition-colors cursor-pointer"
                           title="Permanently delete this match from database"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>Delete</span>
+                          <Trash2 className="w-4 h-4" />
+                          <span>🗑️ Permanent Delete Match</span>
                         </button>
                       </div>
                     </div>
