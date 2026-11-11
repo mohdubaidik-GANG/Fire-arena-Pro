@@ -158,14 +158,14 @@ export const AuthGate: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#06060a] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(245,158,11,0.15),rgba(255,255,255,0))] overflow-y-auto">
-      <div className="w-full max-w-md relative my-8">
+    <div className="fixed inset-0 z-50 flex flex-col items-center justify-start pt-4 sm:pt-6 px-4 pb-12 bg-[#06060a] bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(245,158,11,0.18),rgba(255,255,255,0))] overflow-y-auto">
+      <div className="w-full max-w-md relative my-0 sm:my-2">
         {/* Cyberpunk Neon Glow Effect */}
         <div className="absolute -inset-1 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-red-500/20 rounded-3xl blur-xl opacity-70 pointer-events-none" />
 
-        <div className="relative bg-[#0d0d16] border border-amber-500/20 rounded-2xl p-6 sm:p-7 shadow-2xl">
-          {/* Top Bar: PWA Install & Help Guide Buttons */}
-          <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="relative bg-[#0d0d16] border border-amber-500/20 rounded-2xl p-5 sm:p-7 shadow-2xl">
+          {/* Quick Action Top Controls (PWA Install & Guide) */}
+          <div className="flex items-center justify-between gap-2 mb-3">
             <PWAInstallButton />
             <button
               type="button"
@@ -173,18 +173,18 @@ export const AuthGate: React.FC = () => {
               className="h-7 px-2.5 rounded-full bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-orange-500/10 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 text-[11px] font-semibold flex items-center gap-1.5 shadow-sm shadow-amber-500/20 active:scale-95 transition-all cursor-pointer ml-auto"
             >
               <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-              <span>Login Kaise Karein? (Guide)</span>
+              <span>Login Guide</span>
             </button>
           </div>
 
-          {/* Logo Brand Header */}
-          <div className="flex flex-col items-center text-center mb-6">
-            <div className="w-16 h-16 rounded-2xl p-1 bg-gradient-to-br from-amber-500/20 via-orange-500/20 to-red-500/20 flex items-center justify-center shadow-xl shadow-amber-500/30 mb-3 border border-amber-400/40 overflow-hidden">
-              <img src="/logo.png" alt="Fire Arena Pro" className="w-full h-full object-contain filter drop-shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
+          {/* Central Glowing Fire Arena Pro Emblem - Main Visual Anchor */}
+          <div className="flex flex-col items-center text-center mb-5">
+            <div className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl p-1.5 bg-gradient-to-br from-amber-500/25 via-orange-500/20 to-red-600/30 flex items-center justify-center shadow-[0_0_28px_rgba(245,158,11,0.5)] mb-3 border border-amber-400/50 overflow-hidden">
+              <img src="/logo.png" alt="Fire Arena Pro" className="w-full h-full object-contain filter drop-shadow-[0_0_10px_rgba(234,179,8,0.7)]" />
             </div>
 
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-semibold">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-bold px-2 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/20">
                 Official Esports Tournament Platform
               </span>
             </div>

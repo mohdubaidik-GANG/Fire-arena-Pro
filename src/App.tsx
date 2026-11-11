@@ -790,15 +790,17 @@ function PlayerArena({ onNavigate, onLogout }: PlayerArenaProps) {
         </div>
       )}
 
-      {/* Top Header */}
-      <Header
-        onOpenWallet={handleOpenWallet}
-        onOpenProfile={() => setActiveTab('account')}
-        onOpenNotifications={() => setNotificationCenterOpen(true)}
-        onOpenSupport={() => setSupportModalOpen(true)}
-        unreadNotificationsCount={unreadNotifCount}
-        onLogout={onLogout}
-      />
+      {/* Top Header - Conditionally rendered only when user is authenticated */}
+      {user && (
+        <Header
+          onOpenWallet={handleOpenWallet}
+          onOpenProfile={() => setActiveTab('account')}
+          onOpenNotifications={() => setNotificationCenterOpen(true)}
+          onOpenSupport={() => setSupportModalOpen(true)}
+          unreadNotificationsCount={unreadNotifCount}
+          onLogout={onLogout}
+        />
+      )}
 
       {/* Floating Auto Room ID & Password Delivery Card for Joined Players */}
       {activeRoomMatch && !dismissedRoomAlerts.has(activeRoomMatch.id) && (

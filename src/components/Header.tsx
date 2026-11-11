@@ -29,8 +29,13 @@ export const Header: React.FC<HeaderProps> = ({
   const totalBalance = ((profile?.depositBalance || 0) + (profile?.winningsBalance || 0)).toFixed(2);
   const username = profile?.ign || user?.displayName || 'Gamer';
 
+  // Strictly hide top header when user is not logged in / on auth screen
+  if (!user) {
+    return null;
+  }
+
   return (
-    <header className="sticky top-0 z-30 bg-[#06070a]/95 backdrop-blur-md border-b border-red-950/60 px-3 sm:px-6 py-2.5">
+    <header id="top-global-header" className="sticky top-0 z-30 bg-[#06070a]/95 backdrop-blur-md border-b border-red-950/60 px-3 sm:px-6 py-2.5">
       <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
         {/* Left: User Profile Avatar & "Welcome Back, [Username/IGN]" in bright red/white */}
         <div 
